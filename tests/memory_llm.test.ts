@@ -114,7 +114,7 @@ describe('LLM output is untrusted (acceptance 12, 13)', () => {
   it('recovers from a timeout and from malformed output without corrupting state', async () => {
     const { db } = newGameDb();
     const fp = fingerprint(db);
-    const p = new ScriptedProvider([new LlmError('timed out', 'timeout'), '{"dialogue": 42', JSON.stringify({ dialogue: 'missing fields' })]);
+    const p = new ScriptedProvider([new LlmError('timed out', 'timeout'), '{"dialogue": 42', JSON.stringify({ emotion: 'calm', claims: [] })]);
     const conv = startConversation(db, 'CHR-HOLM');
     for (let i = 0; i < 3; i++) {
       const r = await sendMessage(db, withProvider(p), conv.id, 'How is our liquidity?');
@@ -130,6 +130,34 @@ describe('LLM output is untrusted (acceptance 12, 13)', () => {
     expect(econ(fingerprint(db))).toEqual(econ(fp));
     const calls = db.prepare('SELECT status FROM llm_calls').all() as { status: string }[];
     expect(calls.map((c) => c.status)).toEqual(['timeout', 'invalid_output', 'invalid_output']);
+  });
+
+  it('repairs minor out-of-range details instead of discarding an in-character reply', async () => {
+    const { db } = newGameDb();
+    const fp = fingerprint(db);
+    const p = new ScriptedProvider([
+      turn({
+        dialogue: 'You promised me a decision and I am still waiting.',
+        perspective: { stance: 'frustrated', concerns: [], interests: [] },
+        memory_candidates: [{ summary: 'The CEO keeps postponing the Brno decision.', importance: 9, sentiment: -3, kind: 'complaint' }],
+        claims: [{ statement: 'Brno is short of operators.', basis: 'gut feeling', entity_ids: ['DEP-BRNO'] }],
+        trust_delta: -7,
+        follow_up_questions: ['a', 'b', 'c', 'd', 'e'],
+        summary_update: undefined,
+      }),
+    ]);
+    const conv = startConversation(db, 'CHR-OKAFOR');
+    const r = await sendMessage(db, withProvider(p), conv.id, 'Where are we on staffing?');
+    expect(r.mode).toBe('llm');
+    expect(r.reply.content).toContain('still waiting');
+    const mem = db.prepare("SELECT sentiment, importance, kind FROM character_memories WHERE character_id = 'CHR-OKAFOR' AND summary LIKE '%postponing%'").get();
+    expect(mem).toMatchObject({ sentiment: -2, importance: 5, kind: 'observation' });
+    const s = r.reply.structured as { trustDelta: number; claims: { basis: string }[] };
+    expect(s.trustDelta).toBe(-2); // engine bound
+    expect(s.claims[0].basis).toBe('unknown'); // unrecognised basis → least certain
+    const econ = (x: string) => [...x.split('|').slice(1, 9), x.split('|')[15]];
+    expect(econ(fingerprint(db))).toEqual(econ(fp));
+    expect((db.prepare('SELECT status FROM llm_calls').all() as { status: string }[]).map((c) => c.status)).toEqual(['ok']);
   });
 
   it('turns an LLM-proposed action into a validated proposal that the CEO must confirm', async () => {
