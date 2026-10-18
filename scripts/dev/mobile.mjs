@@ -1,0 +1,16 @@
+import { chromium } from 'playwright';
+const out = process.argv[2];
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
+const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+const errors = [];
+page.on('pageerror', (e) => errors.push(String(e)));
+await page.goto('http://localhost:8791');
+await page.waitForTimeout(800);
+if (await page.getByText('Start new game').count()) await page.getByText('Start new game').first().click();
+await page.waitForTimeout(3000);
+await page.goto('http://localhost:8791/#/dashboard');
+await page.waitForTimeout(1500);
+await page.screenshot({ path: `${out}/mobile.png` });
+const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+console.log('horizontal overflow px', overflow, 'errors', errors);
+await browser.close();
