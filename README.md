@@ -93,20 +93,50 @@ partially updated.
 
 ## How to play
 
-- **Time** only moves when you press **+1 day / +1 week / +1 month**. Meetings, reviews and
-  decisions happen on the current day. Each advance ends with a CEO briefing.
+New to the game? The dashboard opens with a **Getting started** card, and **? Guide** (top
+bar) answers “How do I…?” questions step by step — for example “How do I hire more people?”.
+The guide explains the interface and the rules; it never tells you what to decide.
+
+- **Time** only moves when you press **+1 day / +1 week / +1 month**. Each advance ends with
+  a CEO briefing: what was built and sold, cash, what needs attention, what was carried out
+  and what is coming up.
+- **Decisions** (sidebar) is the one place for everything you can decide, grouped by area
+  (people & communication, products & pricing, production, projects & issues, money, deals,
+  board). **Preview…** never changes anything: the review shows the calculated consequences,
+  who must approve, *what happens next*, and — for board items — how each director is likely
+  to vote and why. Then **Approve & execute**, **Submit to the board**, **Keep as draft**,
+  **Change parameters** (re-checked from scratch) or **Reject**. The same decisions are also
+  available as buttons on the Products, Projects, Operations and Finance pages.
+- **The board.** Decisions above your authority (spending >€50m, bank debt >€100m, hiring
+  >500, restructuring >300 positions, bonds, equity, asset sales, cancelling a vehicle
+  programme) are put to the next meeting automatically when you confirm them and **carried
+  out on the meeting day if approved**. To have several decisions voted together, tick your
+  drafts into a **board plan** (Decisions → Board); a plan without decisions is an
+  endorsement only and changes nothing by itself. If an approved decision cannot run on the
+  day (e.g. the engineers it needs are busy), it waits with the reason under
+  **Decisions → In progress**, is retried after every time advance and can be run with
+  **Execute now**; approvals stay valid for 90 days.
+- **In progress** lists everything already set in motion, with dates: board votes, hires
+  arriving, consultations ending, lender reviews, agreements to sign, approved decisions
+  waiting. **Recent decisions** shows what was carried out, rejected or withdrawn.
 - **Meetings** (Company → *Meet*, or Inbox → Meetings): talk naturally — ask, instruct,
   persuade, promise. Characters push back when their incentives or the facts warrant it.
-  Concrete proposals they make appear under their reply as *Proposed action* cards.
-- **Every decision is a validated action.** Clicking *Preview*/*Review* shows the
-  calculated consequences (cash, P&L, operations, people, risks) and required approvals.
-  You then **Approve & execute**, **Reject**, or **Modify** (re-validated from scratch).
-  Above your authority the action becomes a **board proposal** voted at the next meeting.
+  Concrete proposals they make appear under their reply (and in Decisions → Your drafts).
+  They know what the leadership knows: your recent decisions, the board agenda, and the gist
+  of your meetings with their colleagues.
+- **Share documents and memos** (in a meeting, Company → Share a document, or Decisions →
+  People & communication): forecast, financial results, liquidity & debt, project status,
+  production & sales, workforce, a board proposal, a negotiation's status, your decision log,
+  or a memo in your own words. Each is a dated snapshot of the company's figures; recipients
+  use it in later meetings and colleagues learn it was circulated. When a character asks for
+  information, this is how you give it to them.
 - **Negotiations** (Inbox → Negotiations, or the side panel in a meeting with the
   counterparty): table offers term by term plus an argument. The counterparty accepts,
   counters, asks for internal approval, or breaks off. An agreement must still be **signed**.
-- **Projects** (Projects): approve, start from the catalogue, re-plan (target date,
-  staffing, budget, descope) or cancel; act on issues via their documented options.
+- **Projects**: approve, start from the catalogue (each entry says why it cannot start now,
+  if it cannot), re-plan (target date, staffing, budget, descope) or cancel; act on issues
+  via their documented options. The Vela mild-hybrid refresh replaces the proposed Euro 7
+  compliance project if that one was never approved.
 - **Finance**: statements straight from the ledger, 3-scenario forecasts, debt & covenants,
   financing requests (bank loan, bond, rights issue, shareholder loan, sale-and-leaseback,
   covenant waiver, personal investment, RCF).
@@ -142,6 +172,9 @@ server/
   game/game.ts           ★ The only code path that mutates a save:
                            propose → validate → preview → confirm → commit (one transaction)
   game/queries.ts        Read models for the UI (private data stripped)
+  game/decisions.ts      The Decisions view: catalogue data, drafts, everything in progress
+  game/documents.ts      Shareable documents and memos (snapshots of authoritative data)
+  guide/                 The how-to guide: manual.ts (step-by-step entries) + guide.ts
   game/saves.ts          Save slots (one SQLite file each)
   actions/               D. Action validator & transaction layer
     registry.ts            22 typed actions + authority checks
@@ -162,6 +195,7 @@ server/
     schemas.ts             output contracts (JSON Schema + Zod)
   db/                    A + E. Authoritative state & memory
     migrations/001_init.sql  generated from tables.ts (see scripts/gen-migration.ts)
+    migrations/002–003       board plans with several decisions; shared documents
     repo.ts                load/persist the world atomically; append-only outputs
   scenario/              The coherent 2027 starting world + opening inbox
 shared/                  domain types, money (integer cents), dates
@@ -282,11 +316,18 @@ A breach blocks the RCF. Financing has eligibility rules, timelines, prices and 
 (`engine/financing.ts`). A "personal investment" by the CEO is limited to verified personal
 liquid assets (€2.8m) and needs related-party approval.
 
-**Board.** Six voting directors with explicit priority weights; each vote is a deterministic
-function of the proposal's computed impact, trust in the CEO, CFO support, the written case
-(bounded) and a small seeded term. Confidence trends toward a target built from the
-forecast vs. the board plan, covenant status, commitments kept/broken and trust (with a
-150-day new-CEO grace period). A materially worse forecast triggers a board reaction.
+**Board.** Six voting directors with explicit priority weights. Each vote is a deterministic
+function of what the proposal itself does — its up-front cash and recurring profit effect,
+jobs, dilution, execution risk, strategic fit and how unavoidable it is (legal compliance, a
+blocked programme, a crew shortage) — plus trust in the CEO, board confidence, CFO support,
+the written case (bounded) and a small seeded term. Tight liquidity makes directors more
+sensitive to cash spent (and more appreciative of cash saved); it does not sink every
+proposal. The same function, without the seeded term, produces the vote outlook shown before
+you submit. Confidence trends toward a target built from the forecast vs. the board plan,
+covenant status, commitments kept/broken and trust (with a 150-day new-CEO grace period); a
+new budget target is set at each year end. A materially worse forecast that leaves the
+company short of the plan triggers a board reaction — but not for spending the board itself
+approved, and full-year figures are never compared across a year end.
 
 **Events.** See World → Event catalogue in the UI (or `engine/events.ts`): every event lists
 preconditions, kind (causal / random shock / scheduled), magnitude and cooldown.
@@ -299,7 +340,7 @@ preconditions, kind (causal / random shock / scheduled), magnitude and cooldown.
 npm test
 ```
 
-32 tests across six suites. Mapping to the acceptance criteria:
+70 tests across ten suites. Mapping to the acceptance criteria:
 
 | # | Criterion | Test |
 |---|---|---|
@@ -319,6 +360,9 @@ npm test
 | 14 | Invalid/rejected actions leave state unchanged | `actions.test.ts` |
 | 15 | Displayed figures come from authoritative state | `world.test.ts` |
 | — | Scenario: delay Eon → forecast changes → board reacts → consistent after restart | `acceptance.test.ts` |
+| — | Board judges proposals on their merits; approved decisions are carried out (or wait with a reason); plans; endorsements; engineer conflicts | `board_flow.test.ts` |
+| — | Characters share one picture: capabilities, shared documents, company knowledge | `characters.test.ts` |
+| — | Guide finds the right how-to, never advises, only names buttons that exist in the UI | `guide.test.ts` |
 
 LLM behaviour is tested with a scripted provider (canned/malformed/failed responses) and the
 subscription provider with a fake Claude Code session (`claude_code.test.ts`: locked-down

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from './api';
 
-export type Page = 'dashboard' | 'company' | 'products' | 'projects' | 'operations' | 'finance' | 'world' | 'inbox' | 'history' | 'meeting' | 'saves';
+export type Page = 'dashboard' | 'decisions' | 'company' | 'products' | 'projects' | 'operations' | 'finance' | 'world' | 'inbox' | 'history' | 'meeting' | 'saves';
 
 export interface Toast {
   id: number;
@@ -23,6 +23,7 @@ interface Ctx {
   propose: (type: string, payload: unknown, opts?: { rationale?: string; title?: string }) => void;
   reviewAction: (actionId: string) => void;
   status: any;
+  openGuide: () => void;
 }
 
 const C = createContext<Ctx>(null as unknown as Ctx);

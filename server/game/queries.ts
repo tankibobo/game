@@ -7,7 +7,7 @@ import type { ActionRecord, Character, Negotiation } from '../../shared/domain';
 import { addDays, diffDays, monthKey, type SimDate } from '../../shared/dates';
 import type { DB } from '../db/connection';
 import { loadJournal, loadWorld, rowToAction, rowToConversation, rowToEvent, rowToForecast, rowToHistory, rowToInbox, rowToMemory, rowToMessage } from '../db/repo';
-import { boardMembers, confidenceTarget, upcomingMeeting } from '../engine/board';
+import { boardMembers, confidenceTarget, predictVote, proposalActionIds, upcomingMeeting } from '../engine/board';
 import { co2Target, fleetCo2Ytd } from '../engine/close';
 import { modelAppeal, modelMonthlyDemand, powertrainPref, segmentMarketMonthly, segmentShares } from '../engine/demand';
 import { EVENT_CATALOGUE } from '../engine/events';
@@ -20,6 +20,7 @@ import { milestonesOf } from '../engine/projects';
 import { byId, type World } from '../engine/world';
 import { ACTIONS } from '../actions/registry';
 import { PROJECT_TEMPLATES } from '../actions/templates';
+import { templateStatus } from './decisions';
 import { unitMaterialCost, FY2026 } from '../scenario/initial';
 
 type Row = Record<string, unknown>;
@@ -54,7 +55,7 @@ export function publicNegotiation(n: Negotiation) {
 }
 
 function pendingActions(db: DB): ActionRecord[] {
-  return (db.prepare("SELECT * FROM actions WHERE status IN ('pending_confirmation','pending_approval') ORDER BY created_at DESC LIMIT 50").all() as Row[]).map(rowToAction);
+  return (db.prepare("SELECT * FROM actions WHERE status IN ('pending_confirmation','pending_approval','approved') ORDER BY created_at DESC LIMIT 50").all() as Row[]).map(rowToAction);
 }
 
 function recentEvents(db: DB, limit = 25) {
@@ -165,7 +166,7 @@ export function products(db: DB) {
     segments: w.segments.map((s) => ({ ...s, marketMonthly: Math.round(segmentMarketMonthly(w, s, d)), powertrainPrefNow: powertrainPref(w, s, d), shares: segmentShares(w, s.id, d).map((r) => ({ ...r, share: Math.round(r.share * 10000) / 10000, monthlyUnits: Math.round(r.monthlyUnits) })) })),
     competitorProducts: w.competitorProducts,
     competitors: w.competitors,
-    templates: PROJECT_TEMPLATES.map((t) => ({ key: t.key, name: t.name, strategy: t.strategy, objective: t.objective, budgetCents: t.budgetCents, fte: t.fte, durationDays: t.durationDays, tradeoffs: t.tradeoffs, active: w.projects.some((p) => p.templateKey === t.key && !['completed', 'cancelled'].includes(p.status)) })),
+    templates: PROJECT_TEMPLATES.map((t) => ({ key: t.key, name: t.name, strategy: t.strategy, objective: t.objective, budgetCents: t.budgetCents, fte: t.fte, durationDays: t.durationDays, tradeoffs: t.tradeoffs, active: w.projects.some((p) => p.templateKey === t.key && !['completed', 'cancelled'].includes(p.status)), ...templateStatus(w, t.key) })),
     projects: w.projects.filter((p) => p.linkedModelId).map((p) => ({ id: p.id, name: p.name, linkedModelId: p.linkedModelId, status: p.status, targetDate: p.targetDate, forecastDate: p.forecastDate })),
   };
 }
@@ -178,7 +179,7 @@ export function projectsView(db: DB) {
     engineering: { freeFte: Math.floor(engineeringFreeFte(w)), sustainingFte: SUSTAINING_ENGINEERING_FTE, headcount: w.departments.filter((x) => x.kind === 'engineering').reduce((a, x) => a + x.headcount, 0) },
     projects: w.projects.map((p) => ({ ...p, progress: progressOf(w, p.id), milestones: milestonesOf(w, p.id), issues: w.issues.filter((i) => i.projectId === p.id || i.linked.some((l) => l.id === p.id)), history: history.filter((h) => h.projectId === p.id) })),
     issues: w.issues,
-    templates: PROJECT_TEMPLATES.map((t) => ({ key: t.key, name: t.name, strategy: t.strategy, budgetCents: t.budgetCents, fte: t.fte, durationDays: t.durationDays, tradeoffs: t.tradeoffs, objective: t.objective })),
+    templates: PROJECT_TEMPLATES.map((t) => ({ key: t.key, name: t.name, strategy: t.strategy, budgetCents: t.budgetCents, fte: t.fte, durationDays: t.durationDays, tradeoffs: t.tradeoffs, objective: t.objective, ...templateStatus(w, t.key) })),
   };
 }
 
@@ -259,7 +260,11 @@ export function inboxView(db: DB) {
     negotiations: w.negotiations.map(publicNegotiation),
     contracts: w.contracts,
     financing: w.financing,
-    boardProposals: w.boardProposals,
+    boardProposals: w.boardProposals.map((b) => {
+      const ids = proposalActionIds(b);
+      const decisions = ids.length ? (db.prepare(`SELECT id, summary, status FROM actions WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids) as { id: string; summary: string; status: string }[]) : [];
+      return { ...b, decisions, outlook: b.status === 'scheduled' ? predictVote(w, b.analysis as Record<string, number>, b.rationale) : null };
+    }),
     pendingActions: pendingActions(db),
     characters: w.characters.filter((c) => c.active).map((c) => ({ id: c.id, name: c.name, title: c.title, org: c.org, orgName: c.orgName, trustInCeo: c.trustInCeo })),
     negotiationTemplates: Object.values(NEGOTIATION_TEMPLATES).map((t) => ({ key: t.key, title: t.title, counterpartyId: t.counterpartyId, counterpartyName: byId(w.characters, t.counterpartyId)?.name ?? t.counterpartyId, open: w.negotiations.some((n) => n.templateKey === t.key && n.status === 'open'), unavailable: t.available?.(w) ?? null })),

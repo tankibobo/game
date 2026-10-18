@@ -63,6 +63,8 @@ export interface WorldOutput {
   actionUpdates: ActionUpdate[];
   /** Actions the engine must commit (e.g. board-approved) — handled by the action service. */
   approvedActions: { actionId: string; proposalId: string }[];
+  /** Cash and profit effects of decisions the board itself approved in this step (it does not react to them as surprises). */
+  boardApprovedImpact: { cashCents: number; ebitCents: number };
 }
 
 export interface World {
@@ -104,7 +106,7 @@ export interface World {
 }
 
 export function emptyOutput(): WorldOutput {
-  return { journal: [], events: [], inbox: [], history: [], memories: [], snapshots: [], forecasts: [], actionUpdates: [], approvedActions: [] };
+  return { journal: [], events: [], inbox: [], history: [], memories: [], snapshots: [], forecasts: [], actionUpdates: [], approvedActions: [], boardApprovedImpact: { cashCents: 0, ebitCents: 0 } };
 }
 
 export function rngFor(w: World): Rng {

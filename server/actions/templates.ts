@@ -28,6 +28,8 @@ export interface ProjectTemplate {
   effects: ProjectEffect[];
   risks: Project['risks'];
   acceptanceCriteria: string[];
+  /** Template keys of projects this one replaces (a merely proposed one is cancelled when this starts). */
+  supersedes?: string[];
   /** Returns a reason when the template cannot be started now. */
   available?: (ctx: { hasActive: (key: string) => boolean; modelStatus: (id: string) => string | undefined }) => string | null;
   tradeoffs: string;
@@ -49,12 +51,12 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     capitalize: true,
     priority: 'high',
     linkedModelId: 'MDL-VELA',
-    durationDays: 330,
+    durationDays: 280,
     milestones: [
-      { name: 'Hybrid system integration', description: '48V system and calibration.', work: 26_000, externalCents: mEur(60) },
-      { name: 'Facelift tooling', description: 'New front end and interior tooling.', work: 16_000, externalCents: mEur(55) },
-      { name: 'Euro 7 homologation', description: 'Certification of all variants.', work: 10_000, externalCents: mEur(15) },
-      { name: 'Production start (Lyon)', description: 'Running change at Lyon.', work: 6_000, externalCents: mEur(10) },
+      { name: 'Hybrid system integration', description: '48V system and calibration.', work: 20_000, externalCents: mEur(60) },
+      { name: 'Facelift tooling', description: 'New front end and interior tooling.', work: 12_300, externalCents: mEur(55) },
+      { name: 'Euro 7 homologation', description: 'Certification of all variants.', work: 7_700, externalCents: mEur(15) },
+      { name: 'Production start (Lyon)', description: 'Running change at Lyon.', work: 4_500, externalCents: mEur(10) },
     ],
     effects: [
       { type: 'model_euro7', modelId: 'MDL-VELA' },
@@ -62,9 +64,10 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
       { type: 'model_appeal', modelId: 'MDL-VELA', delta: 7 },
       { type: 'model_cost', modelId: 'MDL-VELA', deltaCents: eur(780) },
     ],
-    risks: [{ text: 'Takes ~11 months; may not certify before the Euro 7 cut-off (29 Nov 2027) if started late', likelihood: 'medium', impact: 'high' }],
+    risks: [{ text: 'Takes ~9–10 months: started at the January board it should certify just before the Euro 7 cut-off (29 Nov 2027); started later it will not, unless more engineers are added', likelihood: 'medium', impact: 'high' }],
     acceptanceCriteria: ['Euro 7 type approval', 'CO₂ ≤ 110 g/km', 'Clinic appeal +5'],
-    available: ({ hasActive }) => (hasActive('vela_euro7') ? 'The plain Euro 7 compliance project is already running.' : null),
+    supersedes: ['vela_euro7'],
+    available: ({ hasActive }) => (hasActive('vela_euro7') ? 'The plain Euro 7 compliance project (PRJ-VELA-E7) is already under way. Cancel it on the Projects page first if you want the hybrid refresh instead.' : null),
     tradeoffs: 'More expensive than plain Euro 7 compliance, but lowers CO₂ and revives demand for 2–3 more years.',
   },
   {

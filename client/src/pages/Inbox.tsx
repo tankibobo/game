@@ -5,6 +5,7 @@ import { Card, D, Empty, EntityLink, Loading, Sev, Status, Tabs } from '../compo
 import { useGame, useView } from '../ctx';
 import { addDays, diffDays, fmtDate, fmtEur, titleCase } from '../format';
 import { startMeeting } from './Company';
+import { BoardOutlook } from '../components/ActionReview';
 
 type Tab = 'messages' | 'meetings' | 'negotiations' | 'commitments' | 'contracts' | 'board' | 'decisions';
 
@@ -15,11 +16,10 @@ export function Inbox() {
   const [sel, setSel] = useState<string | null>(null);
   const [negSel, setNegSel] = useState<string | null>(null);
   const [promise, setPromise] = useState({ to: 'CHR-DUBREUIL', text: '', due: '' });
-  const [bp, setBp] = useState({ title: '', rationale: '', kind: 'strategy' });
-  const [meetDate, setMeetDate] = useState('');
   useEffect(() => {
     if (!nav.param) return;
-    if (['messages', 'meetings', 'negotiations', 'commitments', 'contracts', 'board', 'decisions'].includes(nav.param)) setTab(nav.param as Tab);
+    if (nav.param === 'decisions') go('decisions', 'drafts');
+    else if (['messages', 'meetings', 'negotiations', 'commitments', 'contracts', 'board'].includes(nav.param)) setTab(nav.param as Tab);
     else if (nav.param.startsWith('NEG')) {
       setTab('negotiations');
       setNegSel(nav.param);
@@ -64,7 +64,6 @@ export function Inbox() {
           ['commitments', `Commitments (${d.commitments.filter((c: any) => ['open', 'due'].includes(c.status)).length})`],
           ['contracts', `Contracts${agreed.length ? ` (${agreed.length} to sign)` : ''}`],
           ['board', 'Board'],
-          ['decisions', `Decisions (${pendingConfirm.length})`],
         ]}
       />
       {tab === 'messages' && (
@@ -231,56 +230,46 @@ export function Inbox() {
       )}
       {tab === 'board' && (
         <div className="stack">
-          <Card title="Board proposals & votes" flush sub={`Next meeting: ${fmtDate(d.nextBoardMeeting, 'long')}`}>
-            {d.boardProposals.length === 0 ? <Empty>No proposals yet.</Empty> : (
-              <table>
-                <thead><tr><th>Proposal</th><th className="num">Meeting</th><th>Status</th><th>Votes</th></tr></thead>
-                <tbody>
-                  {[...d.boardProposals].reverse().map((p: any) => (
-                    <tr key={p.id}>
-                      <td className="strong">{p.title}<div className="tiny muted">{p.id} · submitted {fmtDate(p.submittedDate)}{p.rationale ? ` · “${p.rationale.slice(0, 120)}${p.rationale.length > 120 ? '…' : ''}”` : ''}</div></td>
-                      <td className="num"><D d={p.meetingDate} /></td>
-                      <td><Status s={p.status} />{p.status === 'scheduled' && p.actionId && <button className="btn sm ghost" onClick={() => reviewAction(p.actionId)}>view</button>}</td>
-                      <td className="small">{p.votes.map((v: any) => <div key={v.memberId}><span style={{ color: v.vote === 'for' ? 'var(--good-text)' : v.vote === 'against' ? 'var(--critical-text)' : undefined }}>{v.vote}</span> — {name(v.memberId)}: <span className="muted">{v.reason}</span></div>)}{p.outcomeNote && <div className="strong">{p.outcomeNote}</div>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <div className="callout info small">
+            Decisions above your authority reach the board automatically when you confirm them. To have several decisions voted together, or to ask for endorsement of a strategy, use <a href="#" onClick={(e) => { e.preventDefault(); go('decisions', 'board'); }}>Decisions → Board</a>. Next meeting: <strong>{fmtDate(d.nextBoardMeeting, 'long')}</strong>.
+          </div>
+          <Card title="Board agenda & votes" flush>
+            {d.boardProposals.length === 0 ? <Empty>Nothing has been put to the board yet.</Empty> : (
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Proposal</th><th className="num">Meeting</th><th>Status</th><th>What it does</th><th>Votes</th></tr></thead>
+                  <tbody>
+                    {[...d.boardProposals].reverse().map((p: any) => (
+                      <tr key={p.id}>
+                        <td className="strong">{p.title}<div className="tiny muted">{p.id} · submitted {fmtDate(p.submittedDate)}{p.rationale ? ` · “${p.rationale.slice(0, 120)}${p.rationale.length > 120 ? '…' : ''}”` : ''}</div></td>
+                        <td className="num"><D d={p.meetingDate} /></td>
+                        <td><Status s={p.status} /></td>
+                        <td className="small" style={{ minWidth: 200 }}>
+                          {p.decisions.length === 0 ? <span className="muted">Endorsement only — changes nothing by itself.</span> : p.decisions.map((a: any) => (
+                            <div key={a.id} className="row" style={{ gap: 6 }}>
+                              <a href="#" onClick={(e) => { e.preventDefault(); reviewAction(a.id); }}>{a.summary}</a>
+                              <Status s={a.status} label={a.status === 'approved' ? 'approved — waiting' : a.status === 'committed' ? 'carried out' : undefined} />
+                            </div>
+                          ))}
+                        </td>
+                        <td className="small" style={{ minWidth: 260 }}>
+                          {p.outlook && <BoardOutlook o={p.outlook} compact />}
+                          {p.votes.map((v: any) => <div key={v.memberId}><span style={{ color: v.vote === 'for' ? 'var(--good-text)' : v.vote === 'against' ? 'var(--critical-text)' : undefined }}>{v.vote}</span> — {name(v.memberId)}: <span className="muted">{v.reason}</span></div>)}
+                          {p.outcomeNote && <div className="strong">{p.outcomeNote}</div>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </Card>
-          <div className="grid g2">
-            <Card title="Table a board proposal" sub="Strategy statements and recovery plans. Actions that need board approval are submitted automatically when you confirm them.">
-              <div className="stack" style={{ gap: 8 }}>
-                <label className="field">Title<input type="text" value={bp.title} onChange={(e) => setBp({ ...bp, title: e.target.value })} /></label>
-                <label className="field">Type<select value={bp.kind} onChange={(e) => setBp({ ...bp, kind: e.target.value })}><option value="strategy">Strategy</option><option value="recovery_plan">Recovery plan</option><option value="other">Other</option></select></label>
-                <label className="field">Case for the board<textarea rows={4} value={bp.rationale} onChange={(e) => setBp({ ...bp, rationale: e.target.value })} /></label>
-                <div><button className="btn" disabled={bp.title.length < 5 || bp.rationale.length < 20} onClick={() => propose('issue_board_proposal', { title: bp.title, kind: bp.kind, rationale: bp.rationale })}>Preview</button></div>
-              </div>
-            </Card>
-            <Card title="Call an extraordinary meeting" sub="At least 7 days’ notice; must be before the next regular meeting.">
-              <div className="row">
-                <input type="date" value={meetDate} min={addDays(today, 7)} onChange={(e) => setMeetDate(e.target.value)} aria-label="Meeting date" />
-                <button className="btn" disabled={!meetDate} onClick={() => propose('call_board_meeting', { date: meetDate, reason: 'Decisions that cannot wait for the regular meeting' })}>Preview</button>
-              </div>
-            </Card>
-          </div>
         </div>
       )}
       {tab === 'decisions' && (
-        <Card title="Pending decisions" flush>
-          {d.pendingActions.length === 0 ? <Empty>Nothing waiting.</Empty> : (
-            <div className="list">
-              {d.pendingActions.map((a: any) => (
-                <div key={a.id} className="list-item clickable" onClick={() => reviewAction(a.id)}>
-                  <div style={{ flex: 1 }}>
-                    <div className="t small">{a.summary}</div>
-                    <div className="tiny muted">{titleCase(a.type)} · {a.source === 'llm_proposal' ? `proposed by ${name(a.actorId)} in a meeting` : 'your draft'} · {fmtDate(a.simDate)}</div>
-                  </div>
-                  <Status s={a.status} />
-                </div>
-              ))}
-            </div>
-          )}
+        <Card title="Decisions">
+          <div className="small">Drafts, decisions in progress and recent decisions now live on their own page.</div>
+          <div style={{ marginTop: 8 }}><button className="btn primary" onClick={() => go('decisions', 'drafts')}>Open Decisions</button></div>
         </Card>
       )}
     </div>

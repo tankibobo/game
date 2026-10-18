@@ -5,6 +5,8 @@ import { fmtEur, times } from '../../../shared/money';
 import { post } from '../../engine/ledger';
 import { PARAMS, RULES } from '../../engine/params';
 import { resolveCommitment } from '../../engine/commitments';
+import { liquidityTightness } from '../../engine/board';
+import { availableCrew, steadyStateCrew } from '../../engine/operations';
 import { adjustTrust, byId, clamp, emit, nextId, remember, type World } from '../../engine/world';
 import { ok, type ActionDef } from '../types';
 
@@ -40,6 +42,16 @@ export const hireStaff: ActionDef<{ departmentId: string; headcount: number; rea
       ],
       approvals,
     };
+  },
+  boardAnalysis: (w, p) => {
+    const d = byId(w.departments, p.departmentId)!;
+    const annual = Math.round(times(d.annualCostPerHeadCents, p.headcount) * w.meta.wageIndex);
+    const recruiting = times(PARAMS.recruitingCostPerHeadCents, p.headcount);
+    const need = staffingNeed(w, d.id);
+    const necessity = need > 0 ? clamp(Math.min(need, p.headcount) / p.headcount, 0, 1) * 0.9 : 0;
+    // Hiring that closes a crew shortage pays for itself through output; surplus hiring is pure cost.
+    const covered = need > 0 ? Math.min(need, p.headcount) / p.headcount : 0;
+    return { cashImpactCents: -recruiting, minLiquidityAfterCents: 0, leverageAfter: 0, annualProfitImpactCents: Math.round(-annual * (1 - covered)), jobsImpact: p.headcount, ev: d.id === 'DEP-BRNO' || d.id === 'DEP-BEC' ? 0.3 : 0, growth: 0.3, dilutionPct: 0, risk: 0.15, cfoSupport: need > 0 ? 0.3 : liquidityTightness(w) > 0.3 ? -0.4 : 0, necessity };
   },
   commit: (w, p, ctx) => {
     const d = byId(w.departments, p.departmentId)!;
@@ -97,8 +109,24 @@ export const restructureWorkforce: ActionDef<{ departmentId: string; reduction: 
   },
   boardAnalysis: (w, p) => {
     const d = byId(w.departments, p.departmentId)!;
-    const sev = times(p.severancePerHeadCents ?? PARAMS.severanceDefaultPerHeadCents, p.reduction);
-    return { cashImpactCents: -sev, minLiquidityAfterCents: (w.meta.lastForecastSummary?.minLiquidityCents ?? 0) - sev, leverageAfter: 0, annualProfitImpactCents: times(d.annualCostPerHeadCents, p.reduction) - sev / 3, jobsImpact: -p.reduction, ev: 0, growth: -0.1, dilutionPct: 0, risk: d.kind === 'plant' ? 0.5 : 0.25, cfoSupport: 0.6 };
+    const sev = times(p.severancePerHeadCents ?? Math.round(p.mode === 'voluntary' ? PARAMS.severanceDefaultPerHeadCents * 1.3 : PARAMS.severanceDefaultPerHeadCents), p.reduction);
+    const saving = Math.round(times(d.annualCostPerHeadCents, p.reduction) * w.meta.wageIndex);
+    const surplus = -staffingNeed(w, d.id); // people beyond what the plan needs
+    const cutsIntoNeeded = surplus < p.reduction && d.kind === 'plant';
+    return {
+      cashImpactCents: -sev,
+      minLiquidityAfterCents: 0,
+      leverageAfter: 0,
+      // Cutting below the crew the production plan needs costs output.
+      annualProfitImpactCents: cutsIntoNeeded ? Math.round(saving * Math.max(0, surplus) / p.reduction) - Math.round(saving * 0.5 * (p.reduction - Math.max(0, surplus)) / p.reduction) : saving,
+      jobsImpact: -p.reduction,
+      ev: 0,
+      growth: -0.1,
+      dilutionPct: 0,
+      risk: (d.kind === 'plant' ? 0.45 : 0.25) + (p.mode === 'compulsory' ? 0.15 : 0),
+      cfoSupport: cutsIntoNeeded ? 0 : 0.6,
+      necessity: surplus > 0 ? clamp(Math.min(surplus, p.reduction) / p.reduction, 0, 1) * 0.4 : 0,
+    };
   },
   commit: (w, p, ctx) => {
     const d = byId(w.departments, p.departmentId)!;
@@ -183,6 +211,23 @@ export const resolveCommitmentAction: ActionDef<{ commitmentId: string; outcome:
     return { summary: `Commitment ${p.outcome}`, details: [] };
   },
 };
+
+/**
+ * People a department is short of (positive) or has beyond what the current
+ * plans need (negative). Plants: crew for the planned line rates at full ramp.
+ * Engineering: not modelled as a shortfall (free engineers are visible on the
+ * Projects page), so 0.
+ */
+export function staffingNeed(w: World, departmentId: string): number {
+  const d = byId(w.departments, departmentId);
+  if (!d) return 0;
+  const f = d.factoryId ? byId(w.factories, d.factoryId) : undefined;
+  if (d.kind !== 'plant' || !f) return 0;
+  const incoming = d.hiring.reduce((a, h) => a + h.count, 0) - d.leaving.reduce((a, l) => a + l.count, 0);
+  const have = availableCrew(w, f) + incoming * (1 - f.absenteeismPct / 100);
+  const needed = steadyStateCrew(w, f);
+  return Math.round((needed - have) / (1 - f.absenteeismPct / 100));
+}
 
 export function ceoCanPromise(_w: World): boolean {
   return true;

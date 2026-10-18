@@ -102,9 +102,11 @@ export function Products() {
               <div key={t.key} className="list-item" style={{ padding: '8px 0' }}>
                 <div style={{ flex: 1 }}>
                   <div className="t">{t.name} <span className="pill">{t.strategy}</span></div>
-                  <div className="tiny muted">{fmtEur(t.budgetCents)} · {t.fte} engineers · ~{Math.round(t.durationDays / 30)} months — {t.tradeoffs}</div>
+                  <div className="tiny muted">{fmtEur(t.budgetCents)} · {t.fte} engineers · ~{Math.round(t.durationDays / 30)} months{t.needsBoard ? ' · needs board approval' : ''} — {t.tradeoffs}</div>
+                  {t.replaces?.length > 0 && <div className="tiny" style={{ color: 'var(--warning-text)' }}>Replaces the proposed {t.replaces.join(', ')} (withdrawn when this starts).</div>}
+                  {t.reason && !t.active && <div className="tiny" style={{ color: 'var(--critical-text)' }}>Not possible now: {t.reason}</div>}
                 </div>
-                <button className="btn sm" disabled={t.active} onClick={() => propose('start_project', { templateKey: t.key })}>{t.active ? 'Running' : 'Preview'}</button>
+                <button className="btn sm" disabled={t.active} onClick={() => propose('start_project', { templateKey: t.key })}>{t.active ? 'Running' : 'Preview…'}</button>
               </div>
             ))}
           </div>

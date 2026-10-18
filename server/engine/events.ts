@@ -7,7 +7,7 @@
  */
 import type { EntityRef, EventState, Issue } from '../../shared/domain';
 import { addDays, diffDays, isWorkingDay, type SimDate } from '../../shared/dates';
-import { mEur } from '../../shared/money';
+import { mEur, fmtEur } from '../../shared/money';
 import { canRegister, segmentShares } from './demand';
 import { post } from './ledger';
 import { liquidity, netLeverage } from './metrics';
@@ -425,11 +425,13 @@ export const EVENT_CATALOGUE: EventDef[] = [
       const lev = netLeverage(w);
       const bond = byId(w.debts, 'DEBT-BOND28');
       const refiOpen = byId(w.issues, 'ISS-REFI')?.status !== 'resolved';
+      const refiSecured = Number(byId(w.issues, 'ISS-REFI')?.data.securedCents ?? 0);
+      const unrefinanced = refiSecured > 0 ? `only ${fmtEur(refiSecured)} of the €700m refinancing secured` : 'no refinancing plan';
       const monthsToBond = bond && bond.status === 'active' ? diffDays(bond.maturityDate, w.meta.currentDate) / 30.4 : 99;
       const o = w.meta.ratingOutlook;
       // A downgrade needs a negative outlook first; after a downgrade the outlook resets to stable.
-      if (o === 'negative' && (lev > 3.25 || (refiOpen && monthsToBond < 18))) return [{ data: { dir: 'down' }, probability: 0.5, cause: lev > 3.25 ? `Net leverage ${lev.toFixed(2)}x above the agency's 3.25x downgrade trigger.` : `The 2028 bond matures in ${monthsToBond.toFixed(0)} months without a refinancing plan.`, refs: [{ type: 'debt', id: 'DEBT-BOND28' }] }];
-      if (o === 'stable' && (lev > 3.75 || (refiOpen && monthsToBond < 11))) return [{ data: { dir: 'negative' }, probability: 0.6, cause: lev > 3.75 ? `Net leverage ${lev.toFixed(2)}x keeps rising.` : `Only ${monthsToBond.toFixed(0)} months to the 2028 bond maturity and still no refinancing.`, refs: [{ type: 'debt', id: 'DEBT-BOND28' }] }];
+      if (o === 'negative' && (lev > 3.25 || (refiOpen && monthsToBond < 18))) return [{ data: { dir: 'down' }, probability: 0.5, cause: lev > 3.25 ? `Net leverage ${lev.toFixed(2)}x above the agency's 3.25x downgrade trigger.` : `The 2028 bond matures in ${monthsToBond.toFixed(0)} months with ${unrefinanced}.`, refs: [{ type: 'debt', id: 'DEBT-BOND28' }] }];
+      if (o === 'stable' && (lev > 3.75 || (refiOpen && monthsToBond < 11))) return [{ data: { dir: 'negative' }, probability: 0.6, cause: lev > 3.75 ? `Net leverage ${lev.toFixed(2)}x keeps rising.` : `Only ${monthsToBond.toFixed(0)} months to the 2028 bond maturity, with ${unrefinanced}.`, refs: [{ type: 'debt', id: 'DEBT-BOND28' }] }];
       if (o === 'negative' && lev < 2.5 && !refiOpen) return [{ data: { dir: 'stable' }, probability: 0.5, cause: 'Deleveraging and secured refinancing.', refs: [] }];
       return [];
     },
@@ -468,7 +470,8 @@ export const EVENT_CATALOGUE: EventDef[] = [
       const bond = byId(w.debts, 'DEBT-BOND28');
       const iss = byId(w.issues, 'ISS-REFI');
       if (!bond || bond.status !== 'active' || !iss || iss.status === 'resolved') return [];
-      return diffDays(bond.maturityDate, w.meta.currentDate) < 456 ? [{ probability: 1, cause: 'The €900m bond matures within 15 months with no refinancing in place.', refs: [{ type: 'debt', id: bond.id }, { type: 'issue', id: iss.id }] }] : [];
+      const secured = Number(iss.data.securedCents ?? 0);
+      return diffDays(bond.maturityDate, w.meta.currentDate) < 456 ? [{ probability: 1, cause: secured > 0 ? `The €900m bond matures within 15 months and only ${fmtEur(secured)} of the €700m refinancing is secured.` : 'The €900m bond matures within 15 months with no refinancing in place.', refs: [{ type: 'debt', id: bond.id }, { type: 'issue', id: iss.id }] }] : [];
     },
     apply: (w, _rng, e) => {
       const iss = byId(w.issues, 'ISS-REFI')!;
@@ -601,7 +604,23 @@ export function upkeepIssues(w: World): void {
         break;
       }
       case 'refinancing': {
-        if (Number(iss.data.securedCents ?? 0) >= mEur(700)) closeIssue(w, iss, 'Refinancing of the 2028 notes secured.');
+        const secured = Number(iss.data.securedCents ?? 0);
+        if (byId(w.debts, 'DEBT-BOND28')?.status === 'repaid') {
+          closeIssue(w, iss, 'The 2028 notes have been repaid.');
+          break;
+        }
+        if (secured >= mEur(700)) {
+          closeIssue(w, iss, 'Refinancing of the 2028 notes secured.');
+          break;
+        }
+        const planPresented = w.commitments.some((c) => c.id === 'COM-001' && c.status === 'fulfilled');
+        const inFlight = w.financing.filter((f) => ['under_review', 'offered', 'accepted', 'pending_approval'].includes(f.status) && ['bank_term_loan', 'bond', 'rights_issue', 'sale_leaseback'].includes(f.kind)).reduce((a, f) => a + f.requestedCents, 0);
+        if (secured > 0 || planPresented || inFlight > 0) {
+          // The April deadline was for presenting a plan; once refinancing is under way, show progress instead.
+          if (planPresented || secured > 0) iss.deadline = null;
+          iss.title = `2028 bond (€900m) refinancing — ${fmtEur(secured)} of €700m secured`;
+          iss.nextAction = `Secure at least €700m in total (bank loans, bonds, equity or asset sales) before the notes mature on 15 November 2028.${inFlight > 0 ? ` ${fmtEur(inFlight)} more is under review with lenders.` : ''}`;
+        }
         break;
       }
       case 'labor_agreement': {
@@ -609,7 +628,8 @@ export function upkeepIssues(w: World): void {
         break;
       }
     }
-    if (iss.deadline && d > iss.deadline && !iss.data.deadlineFlagged && !['resolved', 'closed'].includes(iss.status)) {
+    // A deadline means "decide by": choosing one of the documented responses in time meets it.
+    if (iss.deadline && d > iss.deadline && !iss.data.deadlineFlagged && iss.chosenOptions.length === 0 && !['resolved', 'closed'].includes(iss.status)) {
       iss.data.deadlineFlagged = 1;
       iss.severity = SEVERITY_UP[iss.severity];
       emit(w, { type: 'issue_deadline_missed', category: 'project', severity: 'warning', title: `Deadline missed: ${iss.title}`, description: `The issue was due to be addressed by ${iss.deadline}. Severity raised to ${iss.severity}.`, causeKind: 'causal', entities: [{ type: 'issue', id: iss.id }, ...iss.linked] });

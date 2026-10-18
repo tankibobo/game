@@ -137,6 +137,9 @@ async function main() {
   say(`- Status: ${w.meta.status}${w.meta.terminalReason ? ` — ${w.meta.terminalReason}` : ''}`);
   for (const p of w.projects) say(`- ${p.name}: ${p.status}${p.completedDate ? ` (${p.completedDate})` : ''}, target ${p.targetDate} (original ${p.originalTargetDate})`);
   say(`- Commitments: ${w.commitments.filter((c) => c.status === 'fulfilled').length} kept, ${w.commitments.filter((c) => c.status === 'broken').length} broken, ${w.commitments.filter((c) => ['open', 'due'].includes(c.status)).length} open`);
+  for (const r of db.prepare("SELECT date, description FROM events WHERE type = 'board_reaction' ORDER BY seq").all() as { date: string; description: string }[]) say(`- Board reaction ${r.date}: ${r.description}`);
+  const { confidenceTarget } = await import('../server/engine/board');
+  say(`- Board confidence drivers at the end: ${confidenceTarget(w).factors.map((f) => `${f.label} ${f.delta >= 0 ? '+' : ''}${f.delta.toFixed(0)}`).join('; ')}`);
   say(`- Events recorded: ${(db.prepare('SELECT COUNT(*) AS n FROM events').get() as { n: number }).n}; journal entries: ${(db.prepare('SELECT COUNT(*) AS n FROM journal_entries').get() as { n: number }).n}`);
   mkdirSync('docs', { recursive: true });
   writeFileSync('docs/PLAYTHROUGH.md', log.join('\n'));

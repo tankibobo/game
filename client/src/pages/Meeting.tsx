@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { OfferForm } from '../components/Negotiation';
+import { ShareForm } from '../components/ShareForm';
 import { Card, Empty, Loading, Progress, Status } from '../components/ui';
 import { useGame, useView } from '../ctx';
 import { fmtDate, titleCase } from '../format';
@@ -95,7 +96,7 @@ export function Meeting() {
       <div className="page-head">
         <div>
           <h1>{view.conversation.title}</h1>
-          <p>{c?.name}, {c?.title} · started {fmtDate(view.conversation.startedDate)}. Talking does not change the world; decisions go through the validator and your confirmation.</p>
+          <p>{c?.name}, {c?.title} · started {fmtDate(view.conversation.startedDate)}. Talking does not change the company: proposals they make appear under their reply for you to review, and they remember what you say and send them.</p>
         </div>
         <button className="btn sm" onClick={() => go('inbox', 'meetings')}>All meetings</button>
       </div>
@@ -104,7 +105,11 @@ export function Meeting() {
           <div className="chat-log" ref={logRef}>
             {view.messages.length === 0 && !pendingText && <Empty>Say something to {c?.name.split(' ')[0]}. Try asking about the situation, giving an instruction, making a promise, or negotiating.</Empty>}
             {view.messages.map((m: any) =>
-              m.role === 'player' ? (
+              m.role === 'system' ? (
+                <div key={m.id} className="msg system">
+                  <div className="bubble">📎 {m.content}{m.structured?.body && <details><summary className="tiny">Show contents</summary><div className="tiny pre">{m.structured.body}</div></details>}</div>
+                </div>
+              ) : m.role === 'player' ? (
                 <div key={m.id} className="msg player">
                   <div className="bubble">{m.content}</div>
                   <div className="meta" style={{ textAlign: 'right' }}>You · {fmtDate(m.simDate)}</div>
@@ -151,6 +156,11 @@ export function Meeting() {
           {view.negotiation && view.negotiation.status !== 'expired' && (
             <Card title="Negotiation" sub={view.negotiation.title}>
               <OfferForm neg={view.negotiation} conversationId={id} onDone={() => load()} />
+            </Card>
+          )}
+          {c?.active && (
+            <Card title="Share a document" sub={`Send ${c.name.split(' ')[0]} a report built from current figures, or a memo. They will use it in this and later meetings.`}>
+              <ShareForm fixedRecipient={c.id} conversationId={id} onShared={() => load()} />
             </Card>
           )}
           <Card title="Commitments with this person" flush>

@@ -30,7 +30,7 @@ export function buildBriefing(w: World, from: SimDate, days: DayResult[], events
     for (const e of important) lines.push(`• ${e.title}`);
   }
   for (const b of events.filter((e) => e.type === 'board_meeting')) lines.push('', `Board (${fmtDate(b.date)}): ${b.description}`);
-  const good = events.filter((e) => ['milestone_completed', 'project_completed', 'issue_resolved', 'contract_signed', 'financing_executed', 'negotiation_agreed', 'board_approved'].includes(e.type)).slice(0, 5);
+  const good = events.filter((e) => ['milestone_completed', 'project_completed', 'issue_resolved', 'contract_signed', 'financing_executed', 'negotiation_agreed', 'board_approved', 'approved_action_executed', 'hires_arrived', 'project_started'].includes(e.type)).slice(0, 6);
   if (good.length) {
     lines.push('', 'Progress:');
     for (const e of good) lines.push(`• ${e.title}`);
@@ -46,6 +46,6 @@ export function buildBriefing(w: World, from: SimDate, days: DayResult[], events
     lines.push('', 'Coming up (next 3 weeks):');
     for (const u of upcoming.sort().slice(0, 8)) lines.push(`• ${u}`);
   }
-  const subject = `CEO briefing — ${fmtDate(to)}${important.length ? ` · ${important.length} item${important.length > 1 ? 's' : ''} need attention` : ''}`;
+  const subject = `CEO briefing — ${fmtDate(to)}${important.length ? ` · ${important.length} item${important.length > 1 ? 's need' : ' needs'} attention` : ''}`;
   return { subject, body: lines.join('\n') };
 }

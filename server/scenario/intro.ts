@@ -12,7 +12,7 @@ export function addIntroInbox(w: World): void {
 The board's expectations for 2027 are simple to state and hard to deliver:
 • Keep liquidity above €700m and stay inside our bank covenants.
 • Get the Eon into production — the plan we approved in October says 1 October 2027.
-• Present a credible refinancing plan for the €900m bond (due November 2028) at our April meeting.
+• Present a credible refinancing plan for the €900m bond (due November 2028) at our April meeting — that means a financing request (bank loan, bond, equity…) submitted to us or to the lenders by then.
 • Operating profit of around €210m.
 
 Our next meeting is on 28 January. I would rather hear bad news early than late.
@@ -78,7 +78,7 @@ Mikael Sund, CEO, Voltaris Cells`,
     fromId: 'CHR-MARCHETTI',
     subject: 'Decision needed: Vela Euro 7 project and the Kora inverter',
     body: `Two things need your call:
-1. The Vela Euro 7 compliance project (€42m, 160 engineers) has been waiting for approval. It takes ~10 months; if we start later than about March we will not certify in time.
+1. The Vela Euro 7 compliance project (€42m, 160 engineers) has been waiting for approval. It takes ~10 months; if we start later than about March we will not certify in time. The alternative is the Vela mild-hybrid refresh (€165m, 220 engineers, needs the board), which includes Euro 7 and replaces the compliance project. Both are under Decisions → Projects & issues.
 2. We have 37 field reports of Kora inverter shutdowns. I want either a root-cause investigation with Hanseatic or a proactive campaign. Doing nothing is a bet.
 
 Elena`,

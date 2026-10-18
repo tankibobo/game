@@ -49,9 +49,11 @@ export function meetingForSubmission(w: World): SimDate {
 }
 
 export interface ProposalAnalysis {
-  cashImpactCents: number; // negative = cash outflow
+  /** One-off cash effect of the decision (negative = outflow). */
+  cashImpactCents: number;
   minLiquidityAfterCents: number;
   leverageAfter: number;
+  /** Recurring yearly effect on operating profit (savings positive, costs negative). */
   annualProfitImpactCents: number;
   jobsImpact: number; // negative = job losses
   ev: number; // -1..1
@@ -59,24 +61,59 @@ export interface ProposalAnalysis {
   dilutionPct: number;
   risk: number; // 0..1
   cfoSupport: number; // -1..1
+  /** 0..1 — how unavoidable the decision is (legal compliance, a blocked programme, a crew shortage). */
+  necessity?: number;
 }
 
 function num(a: Record<string, number | string | null>, k: keyof ProposalAnalysis): number {
   const v = a[k];
-  return typeof v === 'number' ? v : 0;
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
 }
 
-export function memberScore(w: World, m: Character, p: BoardProposal): { score: number; reason: string } {
-  const prefs = m.boardPrefs ?? { liquidity: 0.2, profitability: 0.2, growth: 0.15, ev: 0.15, jobs: 0.1, dilution: 0.1, risk: 0.1 };
+export const DEFAULT_PREFS = { liquidity: 0.2, profitability: 0.2, growth: 0.15, ev: 0.15, jobs: 0.1, dilution: 0.1, risk: 0.1 };
+
+const FACTOR_LABEL: Record<string, string> = { liquidity: 'liquidity', profitability: 'profitability', growth: 'growth', electrification: 'electrification', jobs: 'jobs', dilution: 'dilution', risk: 'risk', necessity: 'necessity' };
+
+/** How stretched the company's liquidity is in the current forecast: 0 comfortable … 1 no headroom. */
+export function liquidityTightness(w: World): number {
+  const fc = w.meta.lastForecastSummary;
+  const low = fc ? (fc.minLiquidity12mCents ?? fc.minLiquidityCents) : mEur(700);
+  const plan = w.meta.boardPlan.minLiquidityCents;
+  return clamp((plan - low) / Math.max(1, plan), 0, 1);
+}
+
+export interface MemberScore {
+  score: number;
+  reason: string;
+  parts: { factor: string; value: number }[];
+}
+
+/**
+ * A director's view of a proposal. Directors judge what the decision itself
+ * changes (its cash, recurring profit, jobs, risk, strategic fit and how
+ * unavoidable it is). The company's overall liquidity position does not sink
+ * every proposal; it makes directors more sensitive to cash spent — and more
+ * appreciative of cash saved — when headroom is thin.
+ */
+export function memberScore(w: World, m: Character, p: Pick<BoardProposal, 'id' | 'analysis' | 'rationale'>, opts: { noise?: boolean } = {}): MemberScore {
+  const prefs = m.boardPrefs ?? DEFAULT_PREFS;
   const a = p.analysis;
-  const L = clamp((num(a, 'minLiquidityAfterCents') - mEur(700)) / mEur(700), -1, 1) + clamp(num(a, 'cashImpactCents') / mEur(400), -0.5, 0.5);
+  const tight = liquidityTightness(w);
+  const cash = num(a, 'cashImpactCents');
+  const profit = num(a, 'annualProfitImpactCents');
+  const fc = w.meta.lastForecastSummary;
+  const low = fc ? (fc.minLiquidity12mCents ?? fc.minLiquidityCents) : mEur(700);
+  let L = clamp((cash + 1.5 * profit) / mEur(250), -1, 1) * (0.5 + tight);
+  const floor = w.covenants.find((c) => c.metric === 'min_liquidity')?.threshold ?? mEur(400);
+  if (low >= floor && low + cash < floor) L -= 0.5; // would push the forecast below the EIB floor
   const lev = num(a, 'leverageAfter');
-  const P = clamp(num(a, 'annualProfitImpactCents') / mEur(80), -1, 1) + (lev > 3.25 ? -0.4 : 0);
+  const P = clamp(profit / mEur(60), -1, 1) + (lev > 3.25 ? -0.4 : 0);
   const G = clamp(num(a, 'growth'), -1, 1);
   const E = clamp(num(a, 'ev'), -1, 1);
-  const J = clamp(num(a, 'jobsImpact') / 1000, -1, 1);
+  const J = clamp(num(a, 'jobsImpact') / 600, -1, 1);
   const D = -clamp(num(a, 'dilutionPct') / 10, 0, 1.5);
   const R = -clamp(num(a, 'risk'), 0, 1);
+  const N = clamp(num(a, 'necessity'), 0, 1);
   const parts: [string, number][] = [
     ['liquidity', prefs.liquidity * L],
     ['profitability', prefs.profitability * P],
@@ -85,19 +122,32 @@ export function memberScore(w: World, m: Character, p: BoardProposal): { score: 
     ['jobs', prefs.jobs * J],
     ['dilution', prefs.dilution * D],
     ['risk', prefs.risk * R],
+    ['necessity', 0.3 * N],
   ];
-  const rng = rngFor(w);
   let s = parts.reduce((x, [, v]) => x + v, 0);
-  s += 0.05; // boards tend to back management
+  s += 0.04; // boards tend to back management
   s += (m.trustInCeo - 50) / 250;
   s += (w.meta.boardConfidence - 50) / 300;
   s += 0.06 * clamp(num(a, 'cfoSupport'), -1, 1);
   s += Math.min(0.06, (p.rationale?.trim().length ?? 0) / 4000); // a written case helps, a little
-  s += 0.06 * (rng.u(p.id, 'vote', m.id) - 0.5);
-  const sorted = [...parts].sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]));
-  const [k, v] = sorted[0];
-  const reason = `${v >= 0 ? 'Supports' : 'Concerned about'} ${k}${sorted[1] && Math.abs(sorted[1][1]) > 0.03 ? `; ${sorted[1][1] >= 0 ? 'positive on' : 'worried about'} ${sorted[1][0]}` : ''}.`;
-  return { score: Math.round(s * 1000) / 1000, reason };
+  if (opts.noise !== false) s += 0.04 * (rngFor(w).u(p.id, 'vote', m.id) - 0.5);
+  const sorted = [...parts].filter(([, v]) => Math.abs(v) >= 0.01).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]));
+  const phrase = ([k, v]: [string, number]): string => {
+    if (k === 'liquidity') return v >= 0 ? `it strengthens liquidity (${fmtEur(cash, { sign: true })} now${profit ? `, ${fmtEur(profit, { sign: true })} a year after that` : ''})` : `the cash it needs (${fmtEur(-cash)}${profit < 0 ? ` plus ${fmtEur(-profit)} a year` : ''})${tight > 0.3 ? ' while liquidity is tight' : ''}`;
+    if (k === 'profitability') return v >= 0 ? `the profit it should add (${fmtEur(profit, { sign: true })} a year)` : `the profit it costs (${fmtEur(profit)} a year)`;
+    if (k === 'jobs') return v >= 0 ? `the ${Math.round(num(a, 'jobsImpact')).toLocaleString('en-GB')} jobs it creates` : `the ${Math.round(-num(a, 'jobsImpact')).toLocaleString('en-GB')} jobs it cuts`;
+    if (k === 'dilution') return `diluting shareholders by ${num(a, 'dilutionPct').toFixed(1)}%`;
+    if (k === 'risk') return 'the execution risk';
+    if (k === 'necessity') return N >= 0.5 ? 'the fact that it has to be done' : 'the part of it that has to be done';
+    if (k === 'electrification') return v >= 0 ? 'its support for electrification' : 'the damage to the electrification strategy';
+    return v >= 0 ? `its contribution to ${FACTOR_LABEL[k]}` : `its effect on ${FACTOR_LABEL[k]}`;
+  };
+  const pos = sorted.filter(([, v]) => v > 0).slice(0, 2).map(phrase);
+  const neg = sorted.filter(([, v]) => v < 0).slice(0, 2).map(phrase);
+  const reason = s > 0
+    ? `For: ${pos.join(' and ') || 'backs management'}${neg.length ? `; reservations about ${neg.join(' and ')}` : ''}.`
+    : `Against: ${neg.join(' and ') || 'not persuaded'}${pos.length ? `; sees merit in ${pos.join(' and ')}` : ''}.`;
+  return { score: Math.round(s * 1000) / 1000, reason, parts: parts.map(([factor, value]) => ({ factor, value: Math.round(value * 1000) / 1000 })) };
 }
 
 export function voteProposal(w: World, p: BoardProposal): { approved: boolean; votes: BoardVote[] } {
@@ -110,6 +160,44 @@ export function voteProposal(w: World, p: BoardProposal): { approved: boolean; v
   let approved = forV > against;
   if (forV === against) approved = votes.find((v) => v.memberId === 'CHR-DUBREUIL')?.vote === 'for';
   return { approved, votes };
+}
+
+export interface VoteOutlook {
+  outlook: 'likely_approve' | 'too_close' | 'likely_reject';
+  forCount: number;
+  againstCount: number;
+  leaningCount: number;
+  members: { memberId: string; name: string; lean: 'for' | 'against' | 'undecided'; score: number; reason: string }[];
+  tips: string[];
+}
+
+/** What the board would likely do today, without the vote-day idiosyncrasies. Shown before you submit. */
+export function predictVote(w: World, analysis: ProposalAnalysis | Record<string, number>, rationale: string): VoteOutlook {
+  const p = { id: 'PREVIEW', analysis: analysis as unknown as Record<string, number>, rationale };
+  const members = boardMembers(w).map((m) => {
+    const r = memberScore(w, m, p, { noise: false });
+    const lean: 'for' | 'against' | 'undecided' = r.score > 0.03 ? 'for' : r.score < -0.03 ? 'against' : 'undecided';
+    return { memberId: m.id, name: m.name, lean, score: r.score, reason: r.reason };
+  });
+  const forCount = members.filter((x) => x.lean === 'for').length;
+  const againstCount = members.filter((x) => x.lean === 'against').length;
+  const leaningCount = members.length - forCount - againstCount;
+  const chair = members.find((x) => x.memberId === 'CHR-DUBREUIL');
+  const outlook = forCount > members.length / 2 || (forCount === members.length / 2 && chair?.lean === 'for' && againstCount < forCount)
+    ? 'likely_approve'
+    : againstCount > members.length / 2 || (againstCount >= forCount + 2)
+      ? 'likely_reject'
+      : 'too_close';
+  const tips: string[] = [];
+  const against = members.filter((x) => x.lean !== 'for');
+  if (against.length) {
+    tips.push(`Meet the directors who are not yet convinced (${against.map((x) => x.name.split(' ').pop()).join(', ')}): their trust in you counts in the vote, and they will tell you what worries them.`);
+    if (!rationale || rationale.trim().length < 200) tips.push('Write a fuller case for the board (what it costs, what it saves, the alternatives) — it helps a little.');
+    const cashWorry = members.some((x) => x.lean !== 'for' && /cash it needs|profit it costs/.test(x.reason));
+    if (cashWorry) tips.push('Directors are worried about cash: securing financing first, or pairing this with savings in a board plan, changes the picture.');
+    if (members.some((x) => x.lean !== 'for' && /jobs it cuts/.test(x.reason))) tips.push('Employee-side directors oppose job cuts; a voluntary programme or a smaller reduction softens that.');
+  }
+  return { outlook, forCount, againstCount, leaningCount, members, tips };
 }
 
 /** Target board confidence from the latest forecast, commitments and credit standing. */
@@ -156,13 +244,23 @@ export function monthlyConfidence(w: World): void {
 export function reactToForecast(w: World, prev: ForecastSummary | null, next: ForecastSummary): string[] {
   if (!prev) return [];
   const reasons: string[] = [];
-  const ebitDrop = prev.fyEbitCents - next.fyEbitCents;
-  const liqDrop = (prev.minLiquidity12mCents ?? prev.minLiquidityCents) - (next.minLiquidity12mCents ?? next.minLiquidityCents);
+  // Deterioration the board itself signed off on (approved spending) is expected, not a surprise.
+  const allowed = w.out.boardApprovedImpact ?? { cashCents: 0, ebitCents: 0 };
+  const ebitDrop = prev.fyEbitCents - next.fyEbitCents - allowed.ebitCents;
+  const liqDrop = (prev.minLiquidity12mCents ?? prev.minLiquidityCents) - (next.minLiquidity12mCents ?? next.minLiquidityCents) - allowed.cashCents;
   const prevSop = prev.eonSopForecast ?? prev.eonSopConditional;
   const nextSop = next.eonSopForecast ?? next.eonSopConditional;
   const sopSlip = prevSop && nextSop ? diffDays(nextSop, prevSop) : prevSop && !nextSop ? 999 : 0;
-  if (ebitDrop > mEur(40)) reasons.push(`FY operating profit forecast down ${fmtEur(ebitDrop)} to ${fmtEur(next.fyEbitCents)}`);
-  if (liqDrop > mEur(150)) reasons.push(`12-month minimum liquidity forecast down ${fmtEur(liqDrop)} to ${fmtEur(next.minLiquidity12mCents ?? next.minLiquidityCents)}`);
+  const plan = w.meta.boardPlan;
+  const sameYear = prev.createdDate.slice(0, 4) === next.createdDate.slice(0, 4); // FY figures are not comparable across a year end
+  const nextLiq = next.minLiquidity12mCents ?? next.minLiquidityCents;
+  // The board only worries when the revision leaves the company short of its plan.
+  if (sameYear && ebitDrop > mEur(40) && next.fyEbitCents < plan.ebitTargetCents) reasons.push(`FY operating profit forecast down ${fmtEur(prev.fyEbitCents - next.fyEbitCents)} to ${fmtEur(next.fyEbitCents)} (plan ${fmtEur(plan.ebitTargetCents)})`);
+  if (liqDrop > mEur(150) && nextLiq < plan.minLiquidityCents * 1.25) {
+    const bond = w.debts.find((d) => d.id === 'DEBT-BOND28' && d.status === 'active');
+    const entered = bond && diffDays(bond.maturityDate, next.createdDate) <= 366 && diffDays(bond.maturityDate, prev.createdDate) > 366;
+    reasons.push(entered ? `the ${fmtEur(bond!.principalCents)} bond repayment on ${bond!.maturityDate} now falls within the 12-month forecast and is not yet refinanced: minimum liquidity ${fmtEur(nextLiq)}` : `12-month minimum liquidity forecast down ${fmtEur((prev.minLiquidity12mCents ?? prev.minLiquidityCents) - nextLiq)} to ${fmtEur(nextLiq)} (plan ≥ ${fmtEur(plan.minLiquidityCents)})`);
+  }
   if (sopSlip > 21) reasons.push(nextSop ? `Eon SOP forecast slipped ${sopSlip} days to ${nextSop}` : 'Eon SOP can no longer be forecast (blocked)');
   if (!reasons.length) return [];
   const hit = Math.min(10, 3 + reasons.length * 2);
@@ -177,8 +275,12 @@ export function reactToForecast(w: World, prev: ForecastSummary | null, next: Fo
     w.commitments.push({ id: nextId(w, 'COM'), promisorId: 'ceo', promiseeId: 'CHR-DUBREUIL', description: `Present a recovery plan addressing the forecast revision at the board meeting on ${meeting} (submit at least one board proposal or approved corrective action).`, dueDate: meeting, conditions: 'Requested by the chair after the forecast revision.', status: 'open', createdDate: w.meta.currentDate, source: 'board', sourceId: null, check: { type: 'deliver_plan', topic: 'recovery' }, resolvedDate: null, notifiedUpcoming: 0, importance: 4 });
   }
   emit(w, { type: 'board_reaction', category: 'board', severity: 'warning', title: 'Board alarmed by forecast revision', description: `${reasons.join('; ')}. Board confidence −${hit}. The chair expects a recovery plan at the ${meeting} meeting.`, causeKind: 'causal', cause: { text: 'Material deterioration between consecutive forecasts.', refs: [] }, entities: [{ type: 'character', id: 'CHR-DUBREUIL' }], followUps: ['Prepare a recovery plan (board proposal) before the next meeting.'] });
-  inbox(w, { kind: 'board', fromId: 'CHR-DUBREUIL', subject: 'The latest forecast', body: `I have read the revised forecast: ${reasons.join('; ')}. The board needs to understand what changed, what you are doing about it, and what it means for liquidity and the refinancing. Please bring a recovery plan to our meeting on ${meeting}. I would rather hear bad news early than late.`, priority: 'urgent', linked: [] });
+  inbox(w, { kind: 'board', fromId: 'CHR-DUBREUIL', subject: 'The latest forecast', body: `I have read the revised forecast: ${reasons.join('; ')}. The board needs to understand what changed, what you are doing about it, and what it means for liquidity and the refinancing. Please bring a recovery plan to our meeting on ${meeting} — put it to the board at least 7 days before (Decisions → Board → Put a plan to the board), ideally containing the corrective decisions themselves. I would rather hear bad news early than late.`, priority: 'urgent', linked: [] });
   return reasons;
+}
+
+export function proposalActionIds(p: BoardProposal): string[] {
+  return p.actionIds?.length ? p.actionIds : p.actionId ? [p.actionId] : [];
 }
 
 export interface MeetingResult {
@@ -198,15 +300,19 @@ export function holdBoardMeeting(w: World): MeetingResult {
     p.status = approved ? 'approved' : 'rejected';
     p.decidedDate = d;
     p.outcomeNote = `${votes.filter((v) => v.vote === 'for').length} for, ${votes.filter((v) => v.vote === 'against').length} against, ${votes.filter((v) => v.vote === 'abstain').length} abstaining.`;
-    minutes.push(`• ${p.title}: ${approved ? 'APPROVED' : 'REJECTED'} (${p.outcomeNote})`);
+    const ids = proposalActionIds(p);
+    minutes.push(`• ${p.title}: ${approved ? 'APPROVED' : 'REJECTED'} (${p.outcomeNote})${ids.length ? (approved ? ` — ${ids.length > 1 ? `its ${ids.length} decisions are` : 'the decision is'} carried out today; anything not yet possible waits under Decisions → In progress.` : ' — nothing will be carried out.') : ' — endorsement only; no decision attached.'}`);
+    for (const v of votes.filter((x) => x.vote !== 'for')) minutes.push(`    ${byId(w.characters, v.memberId)?.name}: ${v.vote}. ${v.reason}`);
     for (const v of votes) remember(w, { characterId: v.memberId, kind: 'decision', summary: `Voted ${v.vote} on "${p.title}". ${v.reason}`, importance: 3, sentiment: v.vote === 'for' ? 1 : v.vote === 'against' ? -1 : 0, sourceType: 'board_proposal', sourceId: p.id, entityRefs: [{ type: 'board_proposal', id: p.id }] });
     emit(w, { type: approved ? 'board_approved' : 'board_rejected', category: 'board', severity: approved ? 'notice' : 'warning', title: `Board ${approved ? 'approves' : 'rejects'}: ${p.title}`, description: `${p.outcomeNote} ${votes.filter((v) => v.vote === 'against').map((v) => `${byId(w.characters, v.memberId)?.name}: ${v.reason}`).join(' ')}`.trim(), causeKind: 'causal', cause: { text: 'Board vote.', refs: [{ type: 'board_proposal', id: p.id }] }, entities: [{ type: 'board_proposal', id: p.id }], actionId: p.actionId });
     if (approved) {
       res.approved.push(p);
-      if (p.actionId) w.out.approvedActions.push({ actionId: p.actionId, proposalId: p.id });
+      for (const id of ids) w.out.approvedActions.push({ actionId: id, proposalId: p.id });
+      if (!ids.length) w.meta.boardConfidence = clamp(w.meta.boardConfidence + 3, 0, 100);
     } else {
       res.rejected.push(p);
-      if (p.actionId) w.out.actionUpdates.push({ actionId: p.actionId, status: 'rejected', note: `Rejected by the board on ${d}: ${p.outcomeNote}` });
+      for (const id of ids) w.out.actionUpdates.push({ actionId: id, status: 'rejected', note: `Rejected by the board on ${d}: ${p.outcomeNote}` });
+      if (!ids.length) w.meta.boardConfidence = clamp(w.meta.boardConfidence - 3, 0, 100);
     }
   }
   // Performance review and confidence update (regular meetings only)

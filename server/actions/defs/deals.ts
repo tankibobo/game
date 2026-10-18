@@ -123,7 +123,9 @@ export const signContract: ActionDef<{ contractId: string }> = {
     const c = byId(w.contracts, p.contractId)!;
     const t = NEGOTIATION_TEMPLATES[c.templateKey!];
     const up = t.upfrontCents(w, c.terms as Record<string, number>);
-    return { cashImpactCents: -up, minLiquidityAfterCents: (w.meta.lastForecastSummary?.minLiquidityCents ?? 0) - up, leverageAfter: 0, annualProfitImpactCents: 0, jobsImpact: c.kind === 'labor' ? 300 : 0, ev: c.templateKey === 'voltaris_supply' || c.templateKey === 'hanseatic_second_source' ? 1 : 0, growth: 0.3, dilutionPct: 0, risk: 0.3, cfoSupport: 0.2 };
+    const battery = c.templateKey === 'voltaris_supply' || c.templateKey === 'hanseatic_second_source';
+    const eonBlocked = w.issues.some((i) => i.id === 'ISS-VOLTARIS' && !['resolved', 'closed'].includes(i.status));
+    return { cashImpactCents: -up, minLiquidityAfterCents: (w.meta.lastForecastSummary?.minLiquidityCents ?? 0) - up, leverageAfter: 0, annualProfitImpactCents: 0, jobsImpact: 0, ev: battery ? 1 : 0, growth: 0.3, dilutionPct: 0, risk: 0.3, cfoSupport: 0.2, necessity: battery && eonBlocked ? 0.9 : c.kind === 'labor' ? 0.7 : 0.3 };
   },
   commit: (w, p, ctx) => {
     const c = byId(w.contracts, p.contractId)!;

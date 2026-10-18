@@ -199,12 +199,13 @@ export function Projects() {
       {tab === 'new' && (
         <div className="grid g2">
           {d.templates.map((t: any) => {
-            const running = d.projects.some((x: any) => x.templateKey === t.key && !['completed', 'cancelled'].includes(x.status));
             return (
-              <Card key={t.key} title={t.name} sub={t.strategy} actions={<button className="btn sm primary" disabled={running} onClick={() => propose('start_project', { templateKey: t.key })}>{running ? 'Running' : 'Preview'}</button>}>
+              <Card key={t.key} title={t.name} sub={t.strategy} actions={<button className="btn sm primary" disabled={t.running} onClick={() => propose('start_project', { templateKey: t.key })}>{t.running ? 'Running' : 'Preview…'}</button>}>
                 <div className="small">{t.objective}</div>
-                <div className="row small" style={{ marginTop: 6 }}><span className="pill">{fmtEur(t.budgetCents)}</span><span className="pill">{t.fte} engineers</span><span className="pill">~{Math.round(t.durationDays / 30)} months</span>{t.budgetCents > 5_000_000_000 && <span className="pill warning">board approval</span>}</div>
+                <div className="row small" style={{ marginTop: 6 }}><span className="pill">{fmtEur(t.budgetCents)}</span><span className="pill">{t.fte} engineers</span><span className="pill">~{Math.round(t.durationDays / 30)} months</span>{t.needsBoard && <span className="pill warning">board approval</span>}</div>
                 <div className="tiny muted" style={{ marginTop: 6 }}>{t.tradeoffs}</div>
+                {t.replaces?.length > 0 && <div className="tiny" style={{ marginTop: 4, color: 'var(--warning-text)' }}>Replaces the proposed {t.replaces.join(', ')} (withdrawn when this starts).</div>}
+                {t.reason && !t.running && <div className="tiny" style={{ marginTop: 4, color: 'var(--critical-text)' }}>Not possible now: {t.reason}</div>}
               </Card>
             );
           })}

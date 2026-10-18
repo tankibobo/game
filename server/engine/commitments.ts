@@ -45,7 +45,11 @@ export function evaluateCheck(w: World, c: Commitment): 'fulfilled' | 'broken' |
       const since = c.createdDate;
       let delivered = false;
       if (topic === 'voltaris_volume') delivered = w.negotiations.some((n) => n.templateKey === 'voltaris_supply' && (n.status === 'agreed' || n.pendingDecision !== null));
-      else if (topic === 'refinancing') delivered = w.financing.some((f) => ['bank_term_loan', 'bond', 'rights_issue', 'sale_leaseback', 'shareholder_loan'].includes(f.kind) && !['draft', 'withdrawn'].includes(f.status) && f.submittedDate >= since);
+      else if (topic === 'refinancing')
+        delivered =
+          w.financing.some((f) => ['bank_term_loan', 'bond', 'rights_issue', 'sale_leaseback', 'shareholder_loan'].includes(f.kind) && !['draft', 'withdrawn'].includes(f.status) && f.submittedDate >= since) ||
+          // A financing request put to the board for a meeting on or before the deadline counts as presenting the plan.
+          w.boardProposals.some((b) => b.submittedDate >= since && (!c.dueDate || b.meetingDate <= c.dueDate) && !['withdrawn', 'rejected'].includes(b.status) && (b.kind === 'request_financing' || Number(b.analysis.containsFinancing ?? 0) === 1));
       else delivered = w.boardProposals.some((p) => p.submittedDate >= since && p.status !== 'withdrawn');
       if (delivered) return 'fulfilled';
       return past ? 'broken' : 'pending';

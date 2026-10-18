@@ -8,6 +8,7 @@ import { RULES } from '../../engine/params';
 import { applyProjectEffects, effectiveFte, forecastProject, milestonesOf, resolveIssue } from '../../engine/projects';
 import { adjustTrust, byId, clamp, emit, nextId, recordHistory, remember, type World } from '../../engine/world';
 import { PROJECT_TEMPLATES, buildProject, templateByKey } from '../templates';
+import { meetingForSubmission } from '../../engine/board';
 import { ok, type ActionDef } from '../types';
 
 function remainingBudget(p: Project): number {
@@ -27,6 +28,8 @@ export const approveProject: ActionDef<{ projectId: string }> = {
     if (!pr) return { errors: ['Unknown project.'], warnings: [] };
     if (pr.status !== 'proposed') return { errors: [`Project is ${pr.status}, not awaiting approval.`], warnings: [] };
     const v = ok();
+    const replacement = w.projects.find((x) => x.id !== pr.id && !['cancelled', 'completed', 'proposed'].includes(x.status) && x.templateKey && templateByKey(x.templateKey)?.supersedes?.includes(pr.templateKey ?? ''));
+    if (replacement) v.errors.push(`${replacement.name} (${replacement.id}) already covers this work; approving both would duplicate it.`);
     const free = engineeringFreeFte(w);
     if (pr.staffingFte > free) v.errors.push(`Needs ${pr.staffingFte} engineers; only ${Math.floor(free)} are free. Hire engineers or reduce staffing on another project first.`);
     return v;
@@ -59,18 +62,33 @@ export const approveProject: ActionDef<{ projectId: string }> = {
   },
 };
 
-function projectAnalysis(w: World, budget: number, p?: Partial<Project>) {
+/** Is a project unavoidable? Euro 7 compliance for a model that cannot otherwise be sold, or work that unblocks the Eon. */
+export function projectNecessity(w: World, p: { templateKey?: string | null; linkedModelId?: string | null; effects?: { type: string; modelId?: string }[]; id?: string; kind?: string; priority?: string }): number {
+  const euro7 = (p.effects ?? []).some((e) => e.type === 'model_euro7' && !byId(w.models, e.modelId ?? '')?.euro7Compliant) || p.templateKey === 'vela_euro7';
+  if (euro7) return 0.85;
+  const eonBlockedBySupply = w.issues.some((i) => i.id === 'ISS-VOLTARIS' && !['resolved', 'closed'].includes(i.status));
+  if (p.templateKey === 'second_battery_source' && eonBlockedBySupply) return 0.6;
+  if (p.id === 'PRJ-EON') return 0.6;
+  if (p.priority === 'critical') return 0.5;
+  return 0;
+}
+
+function projectAnalysis(w: World, budget: number, p?: Partial<Project> & { effects?: { type: string; modelId?: string }[] }) {
+  const kind = p?.kind;
+  // Expected recurring benefit once delivered (rough yearly payback the directors assume).
+  const payback = kind === 'industrial' || kind === 'cost' ? 0.3 : kind === 'quality' ? 0.4 : kind === 'vehicle_program' ? 0.22 : kind === 'commercial' ? 0.2 : 0.1;
   return {
     cashImpactCents: -budget,
     minLiquidityAfterCents: (w.meta.lastForecastSummary?.minLiquidityCents ?? liquidity(w)) - budget,
     leverageAfter: 0,
-    annualProfitImpactCents: p?.kind === 'cost' || p?.kind === 'industrial' ? Math.round(budget * 0.15) : p?.kind === 'quality' ? Math.round(budget * 0.4) : 0,
+    annualProfitImpactCents: Math.round(budget * payback),
     jobsImpact: 0,
-    ev: p?.linkedModelId === 'MDL-EON' || p?.templateKey === 'compact_ev' || p?.templateKey === 'second_battery_source' ? 0.8 : 0,
-    growth: p?.kind === 'vehicle_program' || p?.kind === 'commercial' ? 0.5 : 0.1,
+    ev: p?.linkedModelId === 'MDL-EON' || p?.templateKey === 'compact_ev' || p?.templateKey === 'second_battery_source' || p?.templateKey === 'brno_eon_expansion' ? 0.8 : p?.templateKey === 'vela_hybrid_refresh' ? 0.3 : 0,
+    growth: kind === 'vehicle_program' || kind === 'commercial' ? 0.5 : 0.1,
     dilutionPct: 0,
-    risk: budget > mEur(500) ? 0.7 : budget > mEur(100) ? 0.4 : 0.2,
-    cfoSupport: budget > liquidity(w) * 0.3 ? -0.8 : budget > mEur(100) ? -0.2 : 0.3,
+    risk: budget > mEur(500) ? 0.7 : budget > mEur(100) ? 0.35 : 0.2,
+    cfoSupport: budget > liquidity(w) * 0.3 ? -0.8 : budget > mEur(150) ? -0.2 : 0.3,
+    necessity: p ? projectNecessity(w, p) : 0,
   };
 }
 
@@ -86,10 +104,11 @@ export const startProject: ActionDef<{ templateKey: string }> = {
     const t = templateByKey(p.templateKey);
     if (!t) return { errors: [`Unknown project template "${p.templateKey}".`], warnings: [] };
     const v = ok();
-    const active = (key: string) => w.projects.some((x) => x.templateKey === key && !['cancelled', 'completed'].includes(x.status));
-    if (active(t.key)) v.errors.push(`${t.name} is already under way.`);
-    const why = t.available?.({ hasActive: active, modelStatus: (id) => byId(w.models, id)?.status });
+    const underWay = (key: string) => w.projects.some((x) => x.templateKey === key && !['cancelled', 'completed', 'proposed'].includes(x.status));
+    if (w.projects.some((x) => x.templateKey === t.key && !['cancelled', 'completed'].includes(x.status))) v.errors.push(`${t.name} is already ${w.projects.find((x) => x.templateKey === t.key && !['cancelled', 'completed'].includes(x.status))?.status === 'proposed' ? 'proposed — approve it on the Projects page' : 'under way'}.`);
+    const why = t.available?.({ hasActive: underWay, modelStatus: (id) => byId(w.models, id)?.status });
     if (why) v.errors.push(why);
+    for (const old of supersededProposals(w, t.key)) v.warnings.push(`This replaces the proposed project “${old.name}” (${old.id}), which will be withdrawn when this one starts.`);
     const free = engineeringFreeFte(w);
     if (t.fte > free) v.errors.push(`Needs ${t.fte} engineers; only ${Math.max(0, Math.floor(free))} are free. Hire engineers (≈90 days) or release staff from another project.`);
     if (t.budgetCents > liquidity(w) * 0.5) v.warnings.push('This budget is large relative to current liquidity.');
@@ -97,9 +116,19 @@ export const startProject: ActionDef<{ templateKey: string }> = {
   },
   preview: (w, p) => {
     const t = templateByKey(p.templateKey)!;
+    const viaBoard = t.budgetCents > RULES.ceoSpendLimitCents;
+    const raw = templateForecast(w, t);
+    // A board decision starts on the meeting day: shift the forecast by the wait.
+    const wait = viaBoard ? Math.max(0, diffDays(meetingForSubmission(w), w.meta.currentDate)) : 0;
+    const fc = { p50: raw.p50 ? addDays(raw.p50, wait) : null, p80: raw.p80 ? addDays(raw.p80, wait) : null };
+    const startNote = viaBoard ? ` if it starts on the board meeting day (${meetingForSubmission(w)})` : '';
+    const euro7 = t.effects.some((e) => e.type === 'model_euro7') ? byId(w.regulations, 'REG-EURO7') : undefined;
+    const cutoff = euro7 ? String(euro7.params.allNewCarsDate ?? '') : '';
     return {
       summary: `Start ${t.name}`,
       consequences: [
+        { label: `Forecast completion ${fc.p50 ?? 'cannot be forecast'}${fc.p80 ? ` (P80 ${fc.p80})` : ''}${startNote} — estimate`, kind: 'operational' },
+        ...(cutoff && fc.p50 && fc.p50 > cutoff ? [{ label: `Forecast completion is after the Euro 7 cut-off (${cutoff}): the ${byId(w.models, t.linkedModelId ?? '')?.name ?? 'model'} could not be registered from ${cutoff} until it is certified. Adding engineers (Re-plan) or the plain compliance project would avoid the gap.`, kind: 'risk' as const }] : cutoff && fc.p80 && fc.p80 > cutoff ? [{ label: `Tight: the pessimistic forecast (P80 ${fc.p80}) is after the Euro 7 cut-off (${cutoff}).`, kind: 'risk' as const }] : []),
         { label: 'Budget (external spend as work progresses; engineers are existing payroll)', amountCents: -t.budgetCents, timing: `over ~${Math.round(t.durationDays / 30)} months`, kind: 'cash' },
         { label: `${t.fte} engineers allocated`, kind: 'people' },
         { label: `Strategy: ${t.strategy}. ${t.tradeoffs}`, kind: 'info' },
@@ -110,20 +139,58 @@ export const startProject: ActionDef<{ templateKey: string }> = {
   },
   boardAnalysis: (w, p) => {
     const t = templateByKey(p.templateKey)!;
-    return projectAnalysis(w, t.budgetCents, { kind: t.kind, linkedModelId: t.linkedModelId, templateKey: t.key });
+    return projectAnalysis(w, t.budgetCents, { kind: t.kind, linkedModelId: t.linkedModelId, templateKey: t.key, effects: t.effects, priority: t.priority });
   },
   commit: (w, p, ctx) => {
     const t = templateByKey(p.templateKey)!;
+    for (const old of supersededProposals(w, t.key)) {
+      old.status = 'cancelled';
+      old.lastDecision = `${w.meta.currentDate}: withdrawn — replaced by ${t.name}.`;
+      recordHistory(w, { projectId: old.id, field: 'status', oldValue: 'proposed', newValue: 'cancelled', reason: `Replaced by ${t.name}`, actionId: ctx.actionId });
+      emit(w, { type: 'project_withdrawn', category: 'project', severity: 'info', title: `${old.name} withdrawn`, description: `Replaced by ${t.name}, which covers the same work.`, causeKind: 'player_action', source: 'action', actionId: ctx.actionId, entities: [{ type: 'project', id: old.id }] });
+    }
     const id = nextId(w, 'PRJ');
     const { project, milestones } = buildProject(t, id, w.meta.currentDate, t.milestones.map(() => nextId(w, 'MS')));
     w.projects.push(project);
     w.milestones.push(...milestones);
+    planToForecast(w, project);
     recordHistory(w, { projectId: id, field: 'status', oldValue: null, newValue: 'active', reason: `Started from template ${t.key}`, actionId: ctx.actionId });
     adjustTrust(w, t.sponsorId, 2);
     emit(w, { type: 'project_started', category: 'project', severity: 'notice', title: `${t.name} started`, description: `Budget ${fmtEur(t.budgetCents)}, ${t.fte} FTE, target ${project.targetDate}.`, causeKind: 'player_action', source: 'action', actionId: ctx.actionId, entities: [{ type: 'project', id }] });
     return { summary: 'Project started', details: [id], result: { projectId: id } };
   },
 };
+
+/** The engine's completion forecast for a catalogue project started today. */
+export function templateForecast(w: World, t: NonNullable<ReturnType<typeof templateByKey>>, start = w.meta.currentDate): { p50: string | null; p80: string | null } {
+  const { project, milestones } = buildProject(t, 'PRJ-PREVIEW', start, t.milestones.map((_, i) => `MS-PREVIEW-${i}`));
+  return forecastProject({ ...w, projects: [...w.projects, project], milestones: [...w.milestones, ...milestones] }, project);
+}
+
+/** New projects are planned to the engine's own forecast, so a fresh project is never "late" on day one. */
+function planToForecast(w: World, pr: Project): void {
+  const f = forecastProject(w, pr);
+  if (!f.p50 || f.p50 <= pr.targetDate || !pr.startDate) return;
+  const days = diffDays(f.p50, pr.startDate);
+  const ms = milestonesOf(w, pr.id);
+  const total = ms.reduce((a, m) => a + m.workTotal, 0);
+  let cum = 0;
+  for (const m of ms) {
+    cum += m.workTotal;
+    m.plannedDate = addDays(pr.startDate, Math.round((days * cum) / Math.max(1, total)));
+    m.originalPlannedDate = m.plannedDate;
+  }
+  pr.targetDate = f.p50;
+  pr.originalTargetDate = f.p50;
+  pr.forecastDate = f.p50;
+  pr.forecastP80Date = f.p80;
+}
+
+/** Proposed (never approved) projects that a template replaces. */
+export function supersededProposals(w: World, templateKey: string): Project[] {
+  const t = templateByKey(templateKey);
+  return w.projects.filter((x) => x.status === 'proposed' && !!x.templateKey && (t?.supersedes ?? []).includes(x.templateKey));
+}
 
 /** Staffing needed for a project to finish by a date (binary search on the forecast model). */
 export function staffingForDate(w: World, pr: Project, date: string): number {
@@ -389,6 +456,12 @@ export const addressIssue: ActionDef<{ issueId: string; optionKey: string }> = {
       }
     }
     return { summary: `${iss.title}: ${opt.label}`, consequences: cons, approvals: opt.costCents > RULES.ceoSpendLimitCents ? [{ approver: 'board', reason: 'Cost above the CEO limit.' }] : [] };
+  },
+  boardAnalysis: (w, p) => {
+    const iss = byId(w.issues, p.issueId)!;
+    const opt = iss.options.find((o) => o.key === p.optionKey)!;
+    const sev = iss.severity === 'critical' ? 0.7 : iss.severity === 'high' ? 0.5 : 0.2;
+    return { cashImpactCents: -opt.costCents, minLiquidityAfterCents: 0, leverageAfter: 0, annualProfitImpactCents: 0, jobsImpact: 0, ev: iss.projectId === 'PRJ-EON' ? 0.4 : 0, growth: 0.1, dilutionPct: 0, risk: 0.2, cfoSupport: 0.2, necessity: sev };
   },
   commit: (w, p, ctx) => {
     const iss = byId(w.issues, p.issueId)!;

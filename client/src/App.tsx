@@ -16,9 +16,12 @@ import { Inbox } from './pages/Inbox';
 import { History } from './pages/History';
 import { Meeting } from './pages/Meeting';
 import { Saves, Setup } from './pages/Saves';
+import { Decisions } from './pages/Decisions';
+import { Guide } from './components/Guide';
 
 const NAV: [Page, string][] = [
   ['dashboard', 'Executive dashboard'],
+  ['decisions', 'Decisions'],
   ['inbox', 'Inbox & meetings'],
   ['company', 'Company'],
   ['products', 'Products'],
@@ -44,6 +47,7 @@ export function App() {
   const [top, setTop] = useState<any>(null);
   const [advancing, setAdvancing] = useState(false);
   const [lastAdvance, setLastAdvance] = useState<any>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const toast = useCallback((text: string, kind: Toast['kind'] = 'info') => {
     const id = Date.now() + Math.random();
@@ -72,11 +76,12 @@ export function App() {
       try {
         const a = await api.post<ActionRecord>('/actions/propose', { type, payload, rationale: opts?.rationale, idempotencyKey: newKey() });
         setReview(a);
+        refresh();
       } catch (e) {
         toast((e as Error).message, 'error');
       }
     },
-    [toast],
+    [toast, refresh],
   );
   const reviewAction = useCallback(
     async (id: string) => {
@@ -102,7 +107,7 @@ export function App() {
     }
   };
 
-  const ctx = { version, refresh, nav, go, toast, propose, reviewAction, status };
+  const ctx = { version, refresh, nav, go, toast, propose, reviewAction, status, openGuide: () => setGuideOpen(true) };
   if (!status) return <div className="empty">Connecting to the simulation server…</div>;
   const hasGame = !!status.activeSave && !!status.game;
   const meta = top?.meta;
@@ -126,7 +131,7 @@ export function App() {
               <button key={p} className={`nav-item ${nav.page === p || (p === 'inbox' && nav.page === 'meeting') ? 'active' : ''}`} onClick={() => go(p)}>
                 <span>{l}</span>
                 {p === 'inbox' && top?.unreadInbox > 0 && <span className="nav-badge">{top.unreadInbox}</span>}
-                {p === 'dashboard' && top?.pendingActions?.filter((a: any) => a.status === 'pending_confirmation').length > 0 && <span className="nav-badge" style={{ background: '#c98500' }}>{top.pendingActions.filter((a: any) => a.status === 'pending_confirmation').length}</span>}
+                {p === 'decisions' && top?.pendingActions?.filter((a: any) => a.status === 'pending_confirmation' || a.status === 'approved').length > 0 && <span className="nav-badge" style={{ background: '#c98500' }} title="Drafts waiting for you, or approved decisions waiting to be carried out">{top.pendingActions.filter((a: any) => a.status === 'pending_confirmation' || a.status === 'approved').length}</span>}
               </button>
             ))}
             <div className="sidebar-foot">
@@ -152,6 +157,7 @@ export function App() {
                   <div className="top-kpi"><span className="l">Liquidity</span><span className="v" style={{ color: top.kpis.liquidityCents < 45_000_000_000 ? 'var(--critical-text)' : undefined }}>{fmtEur(top.kpis.liquidityCents)}</span></div>
                   <div className="top-kpi"><span className="l">Net leverage</span><span className="v">{top.kpis.netLeverage > 50 ? 'n/m' : `${top.kpis.netLeverage.toFixed(2)}x`}</span></div>
                   <div className="top-kpi"><span className="l">Board confidence</span><span className="v" style={{ color: top.board.confidence < 30 ? 'var(--critical-text)' : undefined }}>{Math.round(top.board.confidence)}/100</span></div>
+                  <button className="btn sm guide-btn" onClick={() => setGuideOpen(true)} title="Ask how to do something in the game">? Guide</button>
                   <span className={`pill ${status.llm.available ? 'info' : ''}`} title={status.llm.available ? `Characters are voiced by ${llmLabel(status.llm)}; all outcomes are decided by the simulation engine.` : status.llm.note ?? 'Characters use the deterministic rule-based responder.'}>
                     {status.llm.available ? (status.llm.provider === 'claude-code' ? 'Claude characters' : 'LLM characters') : 'Deterministic mode'}
                   </span>
@@ -165,6 +171,7 @@ export function App() {
             )}
             <main className="content">
               {nav.page === 'dashboard' && <Dashboard />}
+              {nav.page === 'decisions' && <Decisions />}
               {nav.page === 'company' && <Company />}
               {nav.page === 'products' && <Products />}
               {nav.page === 'projects' && <Projects />}
@@ -179,7 +186,8 @@ export function App() {
           </div>
         </div>
       )}
-      {review && <ActionReview key={review.id} action={review} onClose={() => setReview(null)} />}
+      {review && <ActionReview key={review.id} action={review} onClose={() => { setReview(null); refresh(); }} />}
+      {guideOpen && <Guide page={nav.page} onClose={() => setGuideOpen(false)} />}
       {lastAdvance && (
         <Modal title={lastAdvance.briefing.subject} onClose={() => setLastAdvance(null)} footer={<><button className="btn" onClick={() => { setLastAdvance(null); go('inbox'); }}>Open inbox</button><button className="btn primary" onClick={() => setLastAdvance(null)}>Continue</button></>}>
           {lastAdvance.status !== 'active' && <div className="callout critical">{lastAdvance.terminalReason}</div>}

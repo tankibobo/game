@@ -13,14 +13,17 @@ import { randomUUID } from 'node:crypto';
 import type { ActionRecord, BoardProposal } from '../../shared/domain';
 import type { DB } from '../db/connection';
 import { initGame, loadWorld, rowToAction, writeWorld } from '../db/repo';
-import { meetingForSubmission, reactToForecast, type ProposalAnalysis } from '../engine/board';
+import { meetingForSubmission, predictVote, proposalActionIds, reactToForecast, type ProposalAnalysis, type VoteOutlook } from '../engine/board';
 import { buildBriefing } from '../engine/briefing';
 import { buildForecast } from '../engine/forecast';
 import { cash } from '../engine/ledger';
-import { liquidity, netLeverage } from '../engine/metrics';
+import { engineeringFreeFte, liquidity, netLeverage } from '../engine/metrics';
 import { updateProjectForecasts } from '../engine/projects';
 import { advanceDays } from '../engine/tick';
-import { emit, inbox, nextId, type World } from '../engine/world';
+import { byId, emit, inbox, nextId, type World } from '../engine/world';
+import { templateByKey } from '../actions/templates';
+import { addDays } from '../../shared/dates';
+import { fmtEur } from '../../shared/money';
 import { ACTION_BY_TYPE, blockingApprovals, checkAuthority } from '../actions/registry';
 import type { ActionDef } from '../actions/types';
 import { DEFAULT_SEED, buildInitialWorld } from '../scenario/initial';
@@ -167,12 +170,29 @@ export function proposeAction(db: DB, input: ProposeInput, preloaded?: World): A
   // The argument-quality modifier for negotiations is computed server-side only.
   if (def.type === 'negotiate_contract') delete payload.argumentQuality;
   Object.assign(payload, input.serverPayload ?? {});
+  if (def.type === 'issue_board_proposal') {
+    const pkg = buildPackage(db, w, (payload.actionIds as string[] | undefined) ?? []);
+    delete payload.packageAnalysis;
+    delete payload.packageItems;
+    if (pkg.errors.length) {
+      base.payload = payload;
+      base.status = 'invalid';
+      base.summary = def.label;
+      base.errors = pkg.errors;
+      insertAction(db, base);
+      return base;
+    }
+    if (pkg.items.length) Object.assign(payload, { packageAnalysis: pkg.analysis, packageItems: pkg.items });
+    base.warnings.push(...pkg.warnings);
+  }
   base.payload = payload;
   const v = safe(() => def.validate(w, payload, actorId), (e) => ({ errors: [String(e)], warnings: [] }));
   base.errors = v.errors;
-  base.warnings = v.warnings;
+  base.warnings = [...base.warnings, ...v.warnings];
   base.summary = def.label;
   if (v.errors.length === 0) {
+    const ew = engineerWarning(db, w, engineersNeeded(w, def.type, payload));
+    if (ew) base.warnings.push(ew);
     const pv = safe(() => def.preview(w, payload), (e) => ({ summary: def.label, consequences: [{ label: `Preview unavailable: ${String(e)}`, kind: 'info' as const }], approvals: [] }));
     base.summary = pv.summary;
     base.consequences = pv.consequences;
@@ -188,6 +208,105 @@ function safe<T>(fn: () => T, onErr: (e: unknown) => T): T {
   } catch (e) {
     return onErr(e instanceof Error ? e.message : e);
   }
+}
+
+// ---------------------------------------------------------------- engineers claimed by decisions in flight
+
+/** Engineers a decision would take from the free pool. */
+function engineersNeeded(w: World, type: string, payload: Record<string, unknown>): number {
+  if (type === 'start_project') return templateByKey(String(payload.templateKey ?? ''))?.fte ?? 0;
+  if (type === 'approve_project') return Math.round(byId(w.projects, String(payload.projectId ?? ''))?.staffingFte ?? 0);
+  if (type === 'change_project_scope') return Math.max(0, Math.round(Number(payload.staffingDelta ?? 0)));
+  return 0;
+}
+
+/** Decisions already waiting for (or approved by) the board that will need engineers when carried out. */
+function engineerClaims(db: DB, w: World, exclude: string[] = []): { total: number; items: string[] } {
+  const rows = (db.prepare("SELECT * FROM actions WHERE status IN ('pending_approval','approved') AND type IN ('start_project','approve_project','change_project_scope')").all() as Record<string, unknown>[]).map(rowToAction).filter((a) => !exclude.includes(a.id));
+  const items: string[] = [];
+  let total = 0;
+  for (const a of rows) {
+    const n = engineersNeeded(w, a.type, a.payload);
+    if (n > 0) {
+      total += n;
+      items.push(`${a.summary} (${n})`);
+    }
+  }
+  return { total, items };
+}
+
+function engineerWarning(db: DB, w: World, need: number, exclude: string[] = []): string | null {
+  if (need <= 0) return null;
+  const free = Math.max(0, Math.floor(engineeringFreeFte(w)));
+  const claims = engineerClaims(db, w, exclude);
+  if (claims.total + need <= free) return null;
+  return claims.total > 0
+    ? `Engineers: this needs ${need}, and decisions already waiting for the board need ${claims.total} (${claims.items.join('; ')}) — ${need + claims.total} in total, but only ${free} are free. Whatever is carried out last will wait until engineers are free (hire engineers or release them from another project).`
+    : `Engineers: this needs ${need}, but only ${free} are free.`;
+}
+
+// ---------------------------------------------------------------- board plans (packages)
+
+/** Action types that cannot be bundled into a board plan. */
+const NOT_PACKAGEABLE = new Set(['issue_board_proposal', 'call_board_meeting', 'approve_budget', 'advance_time', 'negotiate_contract', 'make_promise', 'resolve_commitment']);
+
+/** Check the drafted decisions included in a board plan and combine their analyses. */
+export function buildPackage(db: DB, w: World, ids: string[]): { errors: string[]; warnings: string[]; items: { id: string; summary: string }[]; analysis: Record<string, number> } {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  let engineers = 0;
+  const items: { id: string; summary: string }[] = [];
+  const parts: ProposalAnalysis[] = [];
+  let financing = false;
+  const unique = [...new Set(ids)];
+  for (const id of unique) {
+    const r = db.prepare('SELECT * FROM actions WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    if (!r) {
+      errors.push(`Unknown decision ${id}.`);
+      continue;
+    }
+    const a = rowToAction(r);
+    if (a.status !== 'pending_confirmation') {
+      errors.push(`${a.summary} (${id}) is ${a.status.replace('_', ' ')}; only drafts awaiting your confirmation can be included.`);
+      continue;
+    }
+    if (NOT_PACKAGEABLE.has(a.type)) {
+      errors.push(`${a.summary} cannot be part of a board plan.`);
+      continue;
+    }
+    const def = ACTION_BY_TYPE.get(a.type)!;
+    const v = def.validate(w, a.payload, a.actorId);
+    if (v.errors.length) {
+      errors.push(`${a.summary} is no longer valid: ${v.errors.join(' ')}`);
+      continue;
+    }
+    items.push({ id, summary: a.summary });
+    engineers += engineersNeeded(w, a.type, a.payload);
+    if (a.type === 'request_financing' && ['bank_term_loan', 'bond', 'rights_issue', 'sale_leaseback', 'shareholder_loan'].includes(String(a.payload.kind))) financing = true;
+    parts.push(def.boardAnalysis ? def.boardAnalysis(w, a.payload) : { ...defaultAnalysis(w), cashImpactCents: -(def.amountCents?.(w, a.payload) ?? 0), risk: 0.15 });
+  }
+  const sum = (k: keyof ProposalAnalysis) => parts.reduce((x, p) => x + (Number(p[k]) || 0), 0);
+  const max = (k: keyof ProposalAnalysis) => parts.reduce((x, p) => Math.max(x, Number(p[k]) || 0), 0);
+  const avg = (k: keyof ProposalAnalysis) => (parts.length ? sum(k) / parts.length : 0);
+  const analysis: Record<string, number> = parts.length
+    ? {
+        cashImpactCents: Math.round(sum('cashImpactCents')),
+        minLiquidityAfterCents: (w.meta.lastForecastSummary?.minLiquidityCents ?? liquidity(w)) + Math.round(sum('cashImpactCents')),
+        leverageAfter: max('leverageAfter'),
+        annualProfitImpactCents: Math.round(sum('annualProfitImpactCents')),
+        jobsImpact: Math.round(sum('jobsImpact')),
+        ev: Math.max(-1, Math.min(1, avg('ev') + 0.1 * Math.sign(max('ev')))),
+        growth: Math.max(-1, Math.min(1, avg('growth'))),
+        dilutionPct: sum('dilutionPct'),
+        risk: Math.min(1, max('risk') + 0.05 * (parts.length - 1)),
+        cfoSupport: avg('cfoSupport'),
+        necessity: max('necessity'),
+        containsFinancing: financing ? 1 : 0,
+      }
+    : {};
+  const ew = engineerWarning(db, w, engineers, unique);
+  if (ew) warnings.push(ew.replace('this needs', 'the decisions in this plan need'));
+  return { errors, warnings, items, analysis };
 }
 
 // ---------------------------------------------------------------- confirm / approve
@@ -210,6 +329,14 @@ export function confirmAction(db: DB, actionId: string, approverId = 'ceo', opts
   if (a.type === 'approve_budget') return approveBudgetAction(db, a, approverId);
   const def = ACTION_BY_TYPE.get(a.type)!;
   const w = loadWorld(db);
+  if (a.type === 'issue_board_proposal') {
+    const ids = (a.payload.actionIds as string[] | undefined) ?? [];
+    const pkg = buildPackage(db, w, ids);
+    if (pkg.errors.length) {
+      updateAction(db, a.id, { status: 'invalid', errors: pkg.errors });
+      return { action: getAction(db, a.id), ok: false, message: `The plan can no longer be tabled: ${pkg.errors.join(' ')}` };
+    }
+  }
   const v = def.validate(w, a.payload, a.actorId);
   if (v.errors.length) {
     updateAction(db, a.id, { status: 'invalid', errors: v.errors, warnings: v.warnings });
@@ -233,9 +360,18 @@ function commitNow(db: DB, w: World, a: ActionRecord, def: ActionDef, approverId
       result = def.commit(w, a.payload, { actionId: a.id, approverId, actorId: a.actorId });
       if (def.affectsForecast) refreshForecast(w, `action:${a.type}`);
       writeWorld(db, w);
-      updateAction(db, a.id, { status: 'committed', result: { ...(result as unknown as Record<string, unknown>), approvedBy: approverId } });
+      updateAction(db, a.id, { status: 'committed', result: { ...(result as unknown as Record<string, unknown>), approvedBy: approverId, committedDate: w.meta.currentDate } });
+      if (a.type === 'issue_board_proposal') {
+        const proposalId = String((result as unknown as { result?: { proposalId?: string } })?.result?.proposalId ?? '');
+        const meeting = w.boardProposals.find((b) => b.id === proposalId)?.meetingDate ?? '';
+        for (const id of (a.payload.actionIds as string[] | undefined) ?? []) {
+          const inc = getAction(db, id);
+          updateAction(db, id, { status: 'pending_approval', approvals: [...inc.approvals.filter((x) => x.approver !== 'board'), { approver: 'board', kind: 'required', status: 'required', ref: proposalId, note: `Part of the board plan “${String(a.payload.title)}” (${proposalId}), voted on ${meeting}.` }] });
+        }
+      }
     })();
-    return { action: getAction(db, a.id), ok: true, message: (result as { summary: string } | null)?.summary ?? 'Committed' };
+    const r = result as { summary: string; details?: string[] } | null;
+    return { action: getAction(db, a.id), ok: true, message: r ? `Done: ${[r.summary, ...(r.details ?? []).filter((x) => !/^[A-Z]{2,4}-\d+$/.test(x))].join(' — ')}` : 'Done.' };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     updateAction(db, a.id, { status: 'failed', errors: [...a.errors, `Commit failed and was rolled back: ${msg}`] });
@@ -249,6 +385,7 @@ function submitToBoard(db: DB, w: World, a: ActionRecord, def: ActionDef, ration
     title: a.summary,
     kind: a.type,
     actionId: a.id,
+    actionIds: [a.id],
     summary: a.summary,
     rationale: rationale ?? a.rationale ?? '',
     analysis: { ...(def.boardAnalysis ? def.boardAnalysis(w, a.payload) : defaultAnalysis(w)) } as unknown as Record<string, number>,
@@ -276,23 +413,78 @@ function approveBudgetAction(db: DB, a: ActionRecord, approverId: string): Confi
   return { action: getAction(db, a.id), ok: res.ok, message: res.message };
 }
 
-/** Called from the tick when the board approves a proposal linked to an action. */
-export function commitApprovedOnWorld(db: DB, w: World, actionId: string): void {
+/** How long a board approval stays valid while the decision cannot be carried out yet. */
+export const APPROVAL_VALID_DAYS = 90;
+
+/**
+ * Called from the tick when the board approves a proposal, and again for
+ * approved decisions still waiting to be carried out. Returns true when the
+ * decision was executed. If it is not possible yet (e.g. the engineers it
+ * needs are busy), it stays "approved — waiting" with the reason, is retried
+ * after every time advance and can be executed by hand from Decisions.
+ */
+export function commitApprovedOnWorld(db: DB, w: World, actionId: string, proposalId?: string): boolean {
   const r = db.prepare('SELECT * FROM actions WHERE id = ?').get(actionId) as Record<string, unknown> | undefined;
-  if (!r) return;
+  if (!r) return false;
   const a = rowToAction(r);
-  if (a.status !== 'pending_approval') return;
+  if (a.status !== 'pending_approval' && a.status !== 'approved') return false;
   const def = ACTION_BY_TYPE.get(a.type);
-  if (!def) return;
+  if (!def) return false;
   const v = def.validate(w, a.payload, a.actorId);
+  const prior = (a.result ?? {}) as { approvedDate?: string; proposalId?: string };
+  const approvedDate = prior.approvedDate ?? w.meta.currentDate;
   if (v.errors.length) {
-    w.out.actionUpdates.push({ actionId, status: 'failed', note: `Approved by the board but no longer valid: ${v.errors.join(' ')}` });
-    emit(w, { type: 'approved_action_invalid', category: 'board', severity: 'warning', title: `Board-approved action could not be executed: ${a.summary}`, description: v.errors.join(' '), causeKind: 'causal', actionId });
-    return;
+    if (a.status === 'pending_approval') {
+      const until = addDays(approvedDate, APPROVAL_VALID_DAYS);
+      w.out.actionUpdates.push({ actionId, status: 'approved', result: { approvedDate, proposalId: proposalId ?? prior.proposalId ?? null, blockedBy: v.errors, validUntil: until } });
+      emit(w, { type: 'approved_action_waiting', category: 'board', severity: 'warning', title: `Approved by the board, not yet possible: ${a.summary}`, description: `${v.errors.join(' ')} It will be carried out automatically once this is fixed (approval valid until ${until}).`, causeKind: 'causal', actionId, entities: proposalId ? [{ type: 'board_proposal', id: proposalId }] : [] });
+      inbox(w, { kind: 'warning', fromId: null, subject: `Board-approved, waiting: ${a.summary}`, body: `The board approved “${a.summary}”, but it cannot be carried out yet:\n• ${v.errors.join('\n• ')}\n\nWhat happens now: it is retried automatically every time you advance time and runs as soon as it becomes possible. You can also run it yourself from Decisions → In progress → “Execute now” after fixing the cause. The approval stays valid until ${until}; after that you would need to submit it again.`, priority: 'urgent', linked: [{ type: 'action', id: actionId }] });
+    }
+    return false;
   }
+  const expected = def.boardAnalysis ? def.boardAnalysis(w, a.payload) : null;
   const res = def.commit(w, a.payload, { actionId, approverId: 'board', actorId: a.actorId });
   if (def.affectsForecast) w.meta.forecastStale = 1;
-  w.out.actionUpdates.push({ actionId, status: 'committed', result: { ...res, approvedBy: 'board' } as unknown as Record<string, unknown> });
+  if (expected) {
+    w.out.boardApprovedImpact.cashCents += Math.max(0, -expected.cashImpactCents);
+    w.out.boardApprovedImpact.ebitCents += Math.max(0, -expected.annualProfitImpactCents) + Math.round(Math.max(0, -expected.cashImpactCents) * 0.5);
+  }
+  w.out.actionUpdates.push({ actionId, status: 'committed', result: { ...res, approvedBy: 'board', approvedDate, committedDate: w.meta.currentDate } as unknown as Record<string, unknown> });
+  emit(w, { type: 'approved_action_executed', category: 'board', severity: 'notice', title: `Board decision carried out: ${a.summary}`, description: [res.summary, ...res.details].filter(Boolean).join(' · '), causeKind: 'causal', actionId, entities: proposalId ? [{ type: 'board_proposal', id: proposalId }] : [] });
+  inbox(w, { kind: 'report', fromId: null, subject: `Done: ${a.summary}`, body: `Approved by the board${approvedDate !== w.meta.currentDate ? ` on ${approvedDate}` : ''} and carried out on ${w.meta.currentDate}.\n${[res.summary, ...res.details].filter(Boolean).map((x) => `• ${x}`).join('\n')}`, priority: 'normal', linked: [{ type: 'action', id: actionId }] });
+  return true;
+}
+
+/** Retry board-approved decisions that were waiting; expire stale approvals. Runs at the end of each time advance. */
+function retryApproved(db: DB, w: World, waiting: ActionRecord[]): void {
+  for (const a of waiting) {
+    if (commitApprovedOnWorld(db, w, a.id)) continue;
+    const res = (a.result ?? {}) as { approvedDate?: string };
+    const until = addDays(res.approvedDate ?? a.simDate, APPROVAL_VALID_DAYS);
+    if (w.meta.currentDate > until) {
+      w.out.actionUpdates.push({ actionId: a.id, status: 'expired', note: `The board approval lapsed on ${until} because the decision could not be carried out.` });
+      inbox(w, { kind: 'warning', fromId: null, subject: `Board approval lapsed: ${a.summary}`, body: `The approval for “${a.summary}” expired on ${until} because it could never be carried out. Prepare it again and resubmit it to the board if it is still needed.`, priority: 'high', linked: [{ type: 'action', id: a.id }] });
+    }
+  }
+}
+
+/** Execute a board-approved decision that was waiting, now (after the player fixed the cause). */
+export function executeApproved(db: DB, actionId: string): ConfirmResult {
+  const a = getAction(db, actionId);
+  if (a.status === 'committed') return { action: a, ok: true, message: 'Already carried out.' };
+  if (a.status !== 'approved') throw new GameError(`Only board-approved decisions that are waiting can be executed here (this one is ${a.status}).`);
+  const w = loadWorld(db);
+  if (w.meta.status !== 'active') throw new GameError(`The game is over: ${w.meta.terminalReason}`);
+  const def = ACTION_BY_TYPE.get(a.type)!;
+  const v = def.validate(w, a.payload, a.actorId);
+  if (v.errors.length) return { action: a, ok: false, message: `Still not possible: ${v.errors.join(' ')}` };
+  let ok = false;
+  db.transaction(() => {
+    ok = commitApprovedOnWorld(db, w, actionId);
+    if (ok && w.meta.forecastStale) refreshForecast(w, `action:${a.type}`);
+    writeWorld(db, w);
+  })();
+  return { action: getAction(db, actionId), ok, message: ok ? 'Carried out.' : 'Could not be carried out.' };
 }
 
 export function rejectAction(db: DB, actionId: string, reason = 'Rejected by the CEO'): ActionRecord {
@@ -307,6 +499,8 @@ export function rejectAction(db: DB, actionId: string, reason = 'Rejected by the
       writeWorld(db, w);
       updateAction(db, a.id, { status: 'cancelled', result: { reason: `Withdrawn from the board agenda: ${reason}` } });
     })();
+  } else if (a.status === 'approved') {
+    updateAction(db, a.id, { status: 'cancelled', result: { ...(a.result ?? {}), reason: `Not carried out: ${reason}` } });
   } else throw new GameError(`Action is ${a.status}; nothing to reject.`);
   return getAction(db, a.id);
 }
@@ -319,7 +513,95 @@ export function modifyAction(db: DB, actionId: string, payload: unknown): Action
   return n;
 }
 
+/** Has the chair asked for a plan that this proposal would satisfy (recovery: any plan; refinancing: one with financing)? */
+export function chairAskedForPlan(w: World, containsFinancing: boolean): boolean {
+  return w.commitments.some((c) => ['open', 'due'].includes(c.status) && c.check.type === 'deliver_plan' && c.promiseeId === 'CHR-DUBREUIL' && (c.check.topic === 'recovery' || (c.check.topic === 'refinancing' && containsFinancing)));
+}
+
+// ---------------------------------------------------------------- client view of an action
+
+export interface ActionView extends ActionRecord {
+  /** When it took effect (board-approved decisions take effect on the meeting day). */
+  effectiveDate: string;
+  needsBoard: boolean;
+  nextStep: string;
+  boardOutlook: VoteOutlook | null;
+  meetingDate: string | null;
+}
+
+/** An action plus plain-language "what happens next" and, for board items, the board's likely vote. */
+export function actionView(db: DB, a: ActionRecord, preloaded?: World): ActionView {
+  const w = preloaded ?? loadWorld(db);
+  const def = ACTION_BY_TYPE.get(a.type);
+  const needsBoard = a.approvals.some((x) => x.approver === 'board' && x.kind === 'required');
+  const proposal = w.boardProposals.find((b) => proposalActionIds(b).includes(a.id) && b.status === 'scheduled') ?? (a.type === 'issue_board_proposal' ? w.boardProposals.find((b) => b.id === (a.result as { result?: { proposalId?: string } } | null)?.result?.proposalId) : undefined);
+  let boardOutlook: VoteOutlook | null = null;
+  let meetingDate: string | null = null;
+  try {
+    if (def && a.status === 'pending_confirmation' && needsBoard && def.boardAnalysis) boardOutlook = predictVote(w, def.boardAnalysis(w, a.payload), a.rationale ?? '');
+    if (def && a.status === 'pending_confirmation' && a.type === 'issue_board_proposal') {
+      const pkg = a.payload.packageAnalysis as Record<string, number> | undefined;
+      const endorsement = { cashImpactCents: 0, minLiquidityAfterCents: 0, leverageAfter: 0, annualProfitImpactCents: 0, jobsImpact: 0, ev: Number(a.payload.evAlignment ?? 0), growth: Number(a.payload.growth ?? 0), dilutionPct: 0, risk: 0.1, cfoSupport: 0.3, necessity: chairAskedForPlan(w, false) ? 0.6 : 0 };
+      boardOutlook = predictVote(w, pkg ?? endorsement, String(a.payload.rationale ?? ''));
+    }
+    if (proposal?.status === 'scheduled' && def && a.type !== 'issue_board_proposal') boardOutlook = predictVote(w, proposal.analysis as Record<string, number>, proposal.rationale);
+  } catch {
+    boardOutlook = null;
+  }
+  if (a.status === 'pending_confirmation' && (needsBoard || a.type === 'issue_board_proposal')) meetingDate = meetingForSubmission(w);
+  if (proposal) meetingDate = proposal.meetingDate;
+  const res = (a.result ?? {}) as { blockedBy?: string[]; validUntil?: string; approvedDate?: string; note?: string; summary?: string };
+  let nextStep = '';
+  switch (a.status) {
+    case 'invalid':
+      nextStep = 'Nothing will happen: the simulation rejected this decision for the reasons shown. Change the parameters (Modify) or choose something else.';
+      break;
+    case 'pending_confirmation':
+      nextStep = a.type === 'issue_board_proposal'
+        ? `“Put to the board” schedules it for the meeting on ${meetingDate}. ${(a.payload.actionIds as string[] | undefined)?.length ? 'If approved, the decisions it contains are carried out that day; if rejected, none of them happen.' : 'It contains no decisions, so even if approved nothing changes except board confidence.'}`
+        : needsBoard
+          ? `This is above your authority. “Submit to the board” puts it on the agenda for the meeting on ${meetingDate}. Nothing changes until then; if the board approves, it is carried out that day automatically. If it is rejected, nothing happens and you can revise it.`
+          : '“Approve & execute” carries it out immediately. Effects with a date (arrivals, effective dates, payments) then happen automatically as time advances.';
+      break;
+    case 'pending_approval':
+      nextStep = `Waiting for the board meeting on ${meetingDate ?? 'the next meeting'}${proposal ? ` (${proposal.id})` : ''}. If approved, it is carried out that day; you will get a message either way. You can still withdraw it.`;
+      break;
+    case 'approved':
+      nextStep = `Approved by the board${res.approvedDate ? ` on ${res.approvedDate}` : ''}, but not possible yet: ${(res.blockedBy ?? []).join(' ')} It is retried automatically after every time advance; once fixed you can also run it with “Execute now”. Approval valid until ${res.validUntil ?? '—'}.`;
+      break;
+    case 'committed': {
+      const r = (a.result ?? {}) as { summary?: string; details?: string[]; approvedBy?: string; approvedDate?: string };
+      const what = [r.summary, ...(r.details ?? []).filter((x) => !/^[A-Z]{2,4}-\d+$/.test(x))].filter(Boolean).join(' — ');
+      nextStep = `${r.approvedBy === 'board' ? `Approved by the board${r.approvedDate ? ` on ${r.approvedDate}` : ''} and carried out` : 'Carried out'}${what ? `: ${what}` : ''}. Follow its effects on the related page and in History.`;
+      break;
+    }
+    case 'rejected':
+      nextStep = res.note?.startsWith('Rejected by the board') ? `${res.note} Nothing was carried out. Revise it (for example a smaller scope, or after building support with the directors) and submit again.` : 'Rejected — nothing was changed.';
+      break;
+    case 'expired':
+      nextStep = 'The board approval lapsed because it could not be carried out in time. Prepare it again if it is still needed.';
+      break;
+    default:
+      nextStep = '';
+  }
+  const rr = (a.result ?? {}) as { committedDate?: string; approvedDate?: string };
+  const effectiveDate = a.status === 'committed' ? String(rr.committedDate ?? rr.approvedDate ?? a.simDate) : a.simDate;
+  return { ...a, effectiveDate, needsBoard, nextStep, boardOutlook, meetingDate };
+}
+
 // ---------------------------------------------------------------- time
+
+/** At each year end the board approves the new year's budget: an operating-profit target a little above the fresh forecast. */
+function setAnnualBudget(w: World): void {
+  const fc = w.meta.lastForecastSummary;
+  if (!fc) return;
+  const yr = w.meta.currentDate.slice(0, 4);
+  const target = Math.round((fc.fyEbitCents + Math.max(Math.abs(fc.fyEbitCents) * 0.08, 2_000_000_000)) / 100_000_000) * 100_000_000;
+  const old = w.meta.boardPlan.ebitTargetCents;
+  w.meta.boardPlan = { ...w.meta.boardPlan, ebitTargetCents: target };
+  emit(w, { type: 'budget_approved', category: 'board', severity: 'notice', title: `Board sets the ${yr} budget: operating profit ${fmtEur(target)}`, description: `The ${yr} target replaces last year's ${fmtEur(old)}. It is based on the year-end forecast (${fmtEur(fc.fyEbitCents)}) plus a stretch. Minimum liquidity stays at ${fmtEur(w.meta.boardPlan.minLiquidityCents)}.`, causeKind: 'scheduled', entities: [{ type: 'character', id: 'CHR-DUBREUIL' }] });
+  inbox(w, { kind: 'board', fromId: 'CHR-DUBREUIL', subject: `The ${yr} budget`, body: `The board has approved the ${yr} budget. Operating profit target: ${fmtEur(target)} (the year-end forecast is ${fmtEur(fc.fyEbitCents)}). We also still expect liquidity above ${fmtEur(w.meta.boardPlan.minLiquidityCents)} and the Eon on plan. Board confidence will be judged against these figures from now on.`, priority: 'normal', linked: [] });
+}
 
 export interface AdvanceResult {
   from: string;
@@ -344,10 +626,14 @@ export function advanceTime(db: DB, days: number, idempotencyKey?: string): Adva
   if (w.meta.status !== 'active') throw new GameError(`The game is over: ${w.meta.terminalReason}`);
   const from = w.meta.currentDate;
   const cashBefore = cash(w);
+  const waiting = (db.prepare("SELECT * FROM actions WHERE status = 'approved' ORDER BY created_at").all() as Record<string, unknown>[]).map(rowToAction);
   let result: AdvanceResult | null = null;
   db.transaction(() => {
-    const results = advanceDays(w, days, { onBoardApproved: (ww, actionId) => commitApprovedOnWorld(db, ww, actionId) });
-    if (w.meta.forecastStale && w.meta.status === 'active') refreshForecast(w, 'period_close');
+    const results = advanceDays(w, days, { onBoardApproved: (ww, actionId, proposalId) => void commitApprovedOnWorld(db, ww, actionId, proposalId) });
+    if (w.meta.status === 'active') retryApproved(db, w, waiting);
+    const newYear = from.slice(0, 4) !== w.meta.currentDate.slice(0, 4);
+    if ((w.meta.forecastStale || newYear) && w.meta.status === 'active') refreshForecast(w, 'period_close');
+    if (newYear && w.meta.status === 'active') setAnnualBudget(w);
     const events = [...w.out.events];
     const briefing = buildBriefing(w, from, results, events, cashBefore);
     inbox(w, { kind: 'briefing', fromId: null, subject: briefing.subject, body: briefing.body, priority: events.some((e) => e.severity === 'critical') ? 'high' : 'normal', linked: [] });

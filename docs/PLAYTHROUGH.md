@@ -10,10 +10,10 @@ Forecast (estimate): FY EBIT −€207.2m, 12-month min liquidity €397.2m, Eon
 > **CEO → Margarethe Holm:** Be frank with me: how much runway do we have, and what worries you most?
 > **Margarethe Holm:** Let me give you the facts first. Cash is €1.20bn, liquidity including the RCF €1.70bn, net leverage 2.22x against a 3.50x covenant. Our latest forecast shows −€207.2m operating profit for the year against a board plan of €210.0m, and 12-month minimum liquidity of €397.2m — that is an estimate.
 
-- **Approve Vela Euro 7 compliance (€42.0m, 160 FTE)** — without it the Vela cannot be sold after 29 Nov 2027 → _Project approved_ (Budget committed: −€42.0m)
-- **Set Lyon Line 1 (Vela) to 520/day** — stop building unsold Velas → _Production plan updated_ (Material purchases change (paid at supplier terms): €15.4m)
-- **Kora hybrid inverter overheating — field reports: Root-cause investigation with Hanseatic** — establish facts before spending on a campaign → _Root-cause investigation with Hanseatic_ (Cost: −€2.5m)
-- **Eon battery thermal-propagation validation incomplete: Redesign inter-module thermal barrier** — fix the design, not just test more → _Redesign inter-module thermal barrier_ (Cost: −€14.0m)
+- **Approve Vela Euro 7 compliance (€42.0m, 160 FTE)** — without it the Vela cannot be sold after 29 Nov 2027 → _Done: Project approved_ (Budget committed: −€42.0m)
+- **Set Lyon Line 1 (Vela) to 520/day** — stop building unsold Velas → _Done: Production plan updated — Lyon Line 1 (Vela): 575 → 520/day_ (Material purchases change (paid at supplier terms): €15.4m)
+- **Kora hybrid inverter overheating — field reports: Root-cause investigation with Hanseatic** — establish facts before spending on a campaign → _Done: Root-cause investigation with Hanseatic — Spend €2.5m — Investigation ≈40 working days_ (Cost: −€2.5m)
+- **Eon battery thermal-propagation validation incomplete: Redesign inter-module thermal barrier** — fix the design, not just test more → _Done: Redesign inter-module thermal barrier — Spend €14.0m — Remaining work −15% — Residual risk factor 0.3_ (Cost: −€14.0m)
 > **CEO → Dr. Tomasz Wierzbicki:** I want the electric crossover ready by September. Tell engineering that failure is not an option.
 > **Dr. Tomasz Wierzbicki:** I understand the intent, but I am not comfortable yet. Pressure does not shorten a test programme. Resources, scope or the date can move — physics cannot. The Eon target is 1 Oct 2027; our current forecast is that it cannot finish until battery supply of 250 packs a day is secured. Open issues: Eon battery thermal-propagation validation incomplete (0% worked off); Battery-management software validation backlog (0% worked off). Voltaris is still contracted for only 140 packs a day.
 
@@ -26,46 +26,46 @@ Negotiating with Voltaris for battery capacity:
 > **Amara Okafor:** Here is where we actually stand. Lyon Line 1 (Vela) is planned at 520/day (max 680). Sevilla Line 1 (Kora) is planned at 520/day (max 560). Brno Line 1 (Kora) is planned at 195/day (max 280). The wage negotiation is open; the union's latest position is 6.0% wage increase, €1200 one-off payment, 48-month job guarantee at the plants.. I will hold you to that.
 >   ↳ proposal: Promise to Amara Okafor: I promise you a decision on the Brno hiring plan by 2027-02-20. [committed]
 
-**Advance 31 days → 2027-02-01.** Board approves: Sign: Voltaris capacity amendment No. 1 · Signed: Voltaris capacity amendment No. 1 · Resolved: Voltaris cannot guarantee Eon volumes beyond 140 packs/day
+**Advance 31 days → 2027-02-01.** Board approves: Sign: Voltaris capacity amendment No. 1 · Signed: Voltaris capacity amendment No. 1 · Board decision carried out: Sign: Voltaris capacity amendment No. 1 · Resolved: Voltaris cannot guarantee Eon volumes beyond 140 packs/day
 
 ### End of January — 2027-02-01
 Cash €1.20bn · liquidity €1.70bn · revenue YTD €545.2m · EBIT YTD −€3.0m · net leverage 2.31x · board confidence 52
 Forecast (estimate): FY EBIT €111.6m, 12-month min liquidity €488.4m, Eon SOP 2027-10-11
 
 ## February–March — people and money
-- **Hire 450 for Brno plant workforce** — Brno needs operators before SOP → _Hiring 450_ (Recruiting cost: −€4.0m; Payroll increase from 2027-03-18: −€1.4m)
-- **Mark “I promise you a decision on the Brno hiring plan by 2027-02-20.” as fulfilled** — kept my word to the CPO → _Commitment fulfilled_
+- **Hire 450 for Brno plant workforce** — Brno needs operators before SOP → _Done: Hiring 450 — Arrival 2027-03-18_ (Recruiting cost: −€4.0m; Payroll increase from 2027-03-18: −€1.4m)
+- **Mark “I promise you a decision on the Brno hiring plan by 2027-02-20.” as fulfilled** — kept my word to the CPO → _Done: Commitment fulfilled_
 Wage negotiation with the union:
 - Offer on NEG-UNION: {"wageIncreasePct":3,"oneOffBonusEur":400,"jobGuaranteeMonths":12} → **countered**
 - Counter-round 1: {"wageIncreasePct":4.5,"oneOffBonusEur":800,"jobGuaranteeMonths":30} → **countered**
 - Counter-round 2: {"wageIncreasePct":5.2,"oneOffBonusEur":1000,"jobGuaranteeMonths":42} → **pending_approval**
 - The union needs a members’ ballot; the answer comes in ~10 days.
-- **New bank term loan: €100.0m** — start refinancing early (board commitment due in April) → _Financing request submitted_ (Potential proceeds if an offer is accepted: €100.0m; Indicative annual interest cost (estimate): −€6.5m)
+- **New bank term loan: €100.0m** — start refinancing early (board commitment due in April) → _Done: Financing request submitted_ (Potential proceeds if an offer is accepted: €100.0m; Indicative annual interest cost (estimate): −€6.5m)
 **Advance 28 days → 2027-03-01.** Kora model-year 2028 update: “Software & ADAS release” completed · Collective wage agreement 2027–2029: agreement in principle · Financing offer: Banque Continentale (lead arranger) · Kora inverter root cause confirmed
 
-- **Sign: Collective wage agreement 2027–2029** — peace obligation restored → _Contract signed_ (Up-front cash: −€18.0m)
-- **Accept: Banque Continentale (lead arranger)** — bank offered €100.0m → _Financing executed_ (Proceeds: €100.0m; Fees: −€1.5m; Interest 4.85% for 5 years: −€4.8m)
-**Advance 31 days → 2027-04-01.** Deadline missed: Kora hybrid inverter overheating — field reports · Resolved: Collective wage agreement expires 31 March 2027 · Eon electric crossover programme: “Battery system validation” blocked · Eon electric crossover programme: “Battery system validation” overdue · Deadline missed: Eon battery thermal-propagation validation incomplete · Resolved: Vela dealer stock above target
+- **Sign: Collective wage agreement 2027–2029** — peace obligation restored → _Done: Contract signed — Personnel cost index rises by 5.2% (now 1.0520). — One-off payment of €1000 per employee paid (€18.0m). — Job guarantee for plant workforces until 2030-08-30 recorded as a commitment._ (Up-front cash: −€18.0m)
+- **Accept: Banque Continentale (lead arranger)** — bank offered €100.0m → _Done: Financing executed — €100.0m received; new instrument Term Loan B (Banque Continentale (lead arranger)) (4.85%, matures 2032-03-01)._ (Proceeds: €100.0m; Fees: −€1.5m; Interest 4.85% for 5 years: −€4.8m)
+**Advance 31 days → 2027-04-01.** Resolved: Collective wage agreement expires 31 March 2027 · Eon electric crossover programme: “Battery system validation” blocked · Eon electric crossover programme: “Battery system validation” overdue · Resolved: Vela dealer stock above target
 
 ### End of March — 2027-04-01
 Cash €1.20bn · liquidity €1.70bn · revenue YTD €1.90bn · EBIT YTD €34.4m · net leverage 2.51x · board confidence 47
 Forecast (estimate): FY EBIT €30.9m, 12-month min liquidity €608.7m, Eon SOP 2027-10-07
 
-- **Kora hybrid inverter overheating — field reports: Targeted service campaign (~41,000 vehicles, capacitor batch)** — targeted campaign after the root cause was confirmed → _Targeted service campaign (~41,000 vehicles, capacitor batch)_ (Cost: −€26.0m)
+- **Kora hybrid inverter overheating — field reports: Targeted service campaign (~41,000 vehicles, capacitor batch)** — targeted campaign after the root cause was confirmed → _Done: Targeted service campaign (~41,000 vehicles, capacitor batch) — Provision €26.0m — Asterion Kora quality +2_ (Cost: −€26.0m)
 ## April–June
-- **Board proposal: Turnaround plan 2027–2029** — present the plan to the board → _Proposal tabled_
-**Advance 30 days → 2027-05-01.** Corvian announces ECU allocation · Resolved: Eon battery thermal-propagation validation incomplete · Eon electric crossover programme: “Battery system validation” completed · Board approves: Turnaround plan 2027–2029 · Deadline missed: 2028 bond (€900m) refinancing not started
+- **Board plan: Turnaround plan 2027–2029** — present the plan to the board → _Done: Plan tabled for 2027-04-22_
+**Advance 30 days → 2027-05-01.** Corvian announces ECU allocation · Resolved: Eon battery thermal-propagation validation incomplete · Eon electric crossover programme: “Battery system validation” completed · Board approves: Turnaround plan 2027–2029
 
 **Advance 31 days → 2027-06-01.** Deadline missed: Battery-management software validation backlog · Eon electric crossover programme: “Supplier PPAP & volume readiness” blocked · Vela Euro 7 compliance: “After-treatment & OBM engineering” completed · Resolved: Battery-management software validation backlog · Eon electric crossover programme: “Supplier PPAP & volume readiness” completed
 
-**Advance 30 days → 2027-07-01.** Meridian downgrades Asterion to BB- (from BB) · Shenlong Auto launches the Shenlong Aurora · Kora model-year 2028 update: “Euro 7 calibration & homologation” completed · Board alarmed by forecast revision
+**Advance 30 days → 2027-07-01.** Meridian downgrades Asterion to BB- (from BB) · Shenlong Auto launches the Shenlong Aurora · Kora model-year 2028 update: “Euro 7 calibration & homologation” completed
 
 ### End of June — 2027-07-01
-Cash €1.02bn · liquidity €1.52bn · revenue YTD €3.90bn · EBIT YTD €75.0m · net leverage 2.86x · board confidence 49
+Cash €1.02bn · liquidity €1.52bn · revenue YTD €3.90bn · EBIT YTD €75.0m · net leverage 2.86x · board confidence 55
 Forecast (estimate): FY EBIT €210.2m, 12-month min liquidity €1.12bn, Eon SOP 2027-10-07
 
 ## July–December
-**Advance 31 days → 2027-08-01.** Eon electric crossover programme: “Brno line conversion & tooling” completed · Commitment due 2027-07-22: Present a recovery plan addressing the forecast revision at the board  · Vela Euro 7 compliance: “Euro 7 homologation” completed · Commitment broken: Present a recovery plan addressing the forecast revision at the board meeting on… · Eon electric crossover programme: “EU type approval” completed
+**Advance 31 days → 2027-08-01.** Eon electric crossover programme: “Brno line conversion & tooling” completed · Vela Euro 7 compliance: “Euro 7 homologation” completed · Eon electric crossover programme: “EU type approval” completed
 
 **Advance 31 days → 2027-09-01.** Kora model-year 2028 update: “MY28 production start” completed · Kora model-year 2028 update completed · Vela Euro 7 compliance: “Production running change” completed · Vela Euro 7 compliance completed
 
@@ -75,10 +75,10 @@ Forecast (estimate): FY EBIT €210.2m, 12-month min liquidity €1.12bn, Eon SO
 
 **Advance 31 days → 2027-12-03.** EU raises duties on Chinese-built BEVs · Board alarmed by forecast revision
 
-**Advance 31 days → 2028-01-03.** Board demands an immediate refinancing solution · Board alarmed by forecast revision
+**Advance 31 days → 2028-01-03.** Board demands an immediate refinancing solution · Board sets the 2028 budget: operating profit €178.0m
 
 ### Year end — 2028-01-03
-Cash €949.8m · liquidity €1.45bn · revenue YTD €9.2m · EBIT YTD €2.0m · net leverage 2.52x · board confidence 39
+Cash €949.8m · liquidity €1.45bn · revenue YTD €9.2m · EBIT YTD €2.0m · net leverage 2.52x · board confidence 53
 Forecast (estimate): FY EBIT €157.9m, 12-month min liquidity €418.0m, Eon SOP 2027-10-07
 
 ## Outcome
@@ -86,5 +86,8 @@ Forecast (estimate): FY EBIT €157.9m, 12-month min liquidity €418.0m, Eon SO
 - Eon electric crossover programme: completed (2027-10-07), target 2027-10-01 (original 2027-03-01)
 - Kora model-year 2028 update: completed (2027-08-05), target 2027-08-31 (original 2027-08-31)
 - Vela Euro 7 compliance: completed (2027-08-11), target 2027-10-29 (original 2027-10-29)
-- Commitments: 5 kept, 1 broken, 2 open
-- Events recorded: 73; journal entries: 1663
+- Commitments: 5 kept, 0 broken, 2 open
+- Board reaction 2027-03-01: FY operating profit forecast down €58.8m to €35.9m (plan €210.0m). Board confidence −5. The chair expects a recovery plan at the 2027-04-22 meeting.
+- Board reaction 2027-12-03: the €900.0m bond repayment on 2028-11-15 now falls within the 12-month forecast and is not yet refinanced: minimum liquidity €484.5m. Board confidence −5. The chair expects a recovery plan at the 2028-01-27 meeting.
+- Board confidence drivers at the end: FY operating profit vs plan -2; 12-month liquidity forecast below plan -12; Eon SOP forecast vs plan -1; Commitments to the board kept +8; Directors’ trust in the CEO +1
+- Events recorded: 68; journal entries: 1663

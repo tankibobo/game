@@ -665,7 +665,7 @@ function issues(): Issue[] {
     },
     {
       ...base, id: 'ISS-REFI', kind: 'refinancing', title: '2028 bond (€900m) refinancing not started',
-      description: 'The 4.25% senior notes mature on 15 November 2028. Cash and RCF alone cannot repay them while funding the Eon. Rating outlook is negative.',
+      description: 'The 4.25% senior notes mature on 15 November 2028. Cash and RCF alone cannot repay them while funding the Eon. Rating outlook is negative. The issue is resolved once at least €700m of new financing is secured.',
       severity: 'high', ownerId: 'CHR-HOLM', discoveredDate: '2026-09-30', status: 'open', nextAction: 'Prepare a refinancing plan for the April board (bank loan, bond, equity or asset sales).', deadline: '2027-04-22',
       linked: [{ type: 'debt', id: 'DEBT-BOND28' }, { type: 'character', id: 'CHR-FONTAINE' }], projectId: null, drag: 0, resolutionWorkTotal: 0, resolutionWorkDone: 0,
       options: [], data: { securedCents: 0 },

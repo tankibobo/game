@@ -5,6 +5,7 @@ import { fmtEur, mEur } from '../../../shared/money';
 import { COUNTERPARTY, REVIEW_DAYS, executeFinancing, financingAnalysis } from '../../engine/financing';
 import { cash } from '../../engine/ledger';
 import { liquidity, rcf, rcfAvailable, rcfBlocked } from '../../engine/metrics';
+import { liquidityTightness } from '../../engine/board';
 import { RULES } from '../../engine/params';
 import { drawRcf, repayRcf } from '../../engine/treasury';
 import { byId, emit, nextId, type World } from '../../engine/world';
@@ -102,7 +103,9 @@ export const requestFinancing: ActionDef<Req> = {
   },
   boardAnalysis: (w, p) => {
     const a = financingAnalysis(w, p.kind, p.amountCents);
-    return { cashImpactCents: a.cashImpactCents, minLiquidityAfterCents: (w.meta.lastForecastSummary?.minLiquidityCents ?? liquidity(w)) + a.cashImpactCents, leverageAfter: a.leverageAfter, annualProfitImpactCents: -a.annualInterestCents, jobsImpact: 0, ev: 0.2, growth: 0, dilutionPct: a.dilutionPct, risk: p.kind === 'bond' ? 0.3 : 0.2, cfoSupport: 0.8 };
+    const maturing = w.debts.some((d) => d.status === 'active' && d.maturityDate <= addDays(w.meta.currentDate, 730) && d.principalCents >= mEur(300));
+    const raises = ['bank_term_loan', 'bond', 'rights_issue', 'sale_leaseback', 'shareholder_loan', 'ceo_contribution'].includes(p.kind);
+    return { cashImpactCents: a.cashImpactCents, minLiquidityAfterCents: (w.meta.lastForecastSummary?.minLiquidityCents ?? liquidity(w)) + a.cashImpactCents, leverageAfter: a.leverageAfter, annualProfitImpactCents: -a.annualInterestCents, jobsImpact: 0, ev: 0.2, growth: 0, dilutionPct: a.dilutionPct, risk: p.kind === 'bond' ? 0.3 : 0.2, cfoSupport: 0.8, necessity: raises && maturing ? 0.3 + 0.4 * liquidityTightness(w) : 0 };
   },
   commit: (w, p, ctx) => {
     if (p.kind === 'rcf_draw') {

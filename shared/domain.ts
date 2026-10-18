@@ -815,7 +815,10 @@ export interface BoardProposal {
   id: Id;
   title: string;
   kind: string;
+  /** The single decision this proposal asks the board to approve (legacy/primary). */
   actionId: Id | null;
+  /** Every concrete decision carried out if the board approves (empty = endorsement only). */
+  actionIds: Id[];
   summary: string;
   rationale: string;
   analysis: Record<string, number | string | null>;
@@ -961,7 +964,10 @@ export type ActionStatus =
   | 'invalid'
   | 'failed'
   | 'superseded'
-  | 'cancelled';
+  | 'cancelled'
+  /** Approved by the board but not yet executable (retried automatically; can also be executed by hand). */
+  | 'approved'
+  | 'expired';
 
 export interface Consequence {
   label: string;

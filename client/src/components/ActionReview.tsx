@@ -19,9 +19,25 @@ export interface ActionRecord {
   result: Record<string, unknown> | null;
   rationale: string | null;
   simDate: string;
+  needsBoard?: boolean;
+  nextStep?: string;
+  meetingDate?: string | null;
+  boardOutlook?: Outlook | null;
+}
+
+export interface Outlook {
+  outlook: 'likely_approve' | 'too_close' | 'likely_reject';
+  forCount: number;
+  againstCount: number;
+  leaningCount: number;
+  members: { memberId: string; name: string; lean: 'for' | 'against' | 'undecided'; score: number; reason: string }[];
+  tips: string[];
 }
 
 const KIND_ICON: Record<string, string> = { cash: '€', pnl: 'P&L', operational: 'OPS', people: 'PPL', risk: '⚠', approval: '✓?', info: 'i' };
+const OUTLOOK_LABEL: Record<Outlook['outlook'], [string, string]> = { likely_approve: ['Likely to be approved', 'good'], too_close: ['Too close to call', 'warning'], likely_reject: ['Likely to be rejected', 'critical'] };
+/** Fields computed by the server; never edited by the player. */
+const SERVER_FIELDS = new Set(['packageAnalysis', 'packageItems', 'argumentQuality']);
 
 export function ConsequenceList({ a }: { a: ActionRecord }) {
   return (
@@ -46,15 +62,90 @@ export function ConsequenceList({ a }: { a: ActionRecord }) {
   );
 }
 
+/** The board's likely vote, director by director, with what would change their minds. */
+export function BoardOutlook({ o, compact }: { o: Outlook; compact?: boolean }) {
+  const [label, tone] = OUTLOOK_LABEL[o.outlook];
+  const head = (
+    <span className="small" style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+      <span className={`pill ${tone}`}>{label}</span>
+      <span className="muted">{o.forCount} for · {o.againstCount} against · {o.leaningCount} undecided (estimate; trust and events can still move votes)</span>
+    </span>
+  );
+  const body = (
+    <>
+      <table>
+        <tbody>
+          {o.members.map((m) => (
+            <tr key={m.memberId}>
+              <td className="small strong" style={{ whiteSpace: 'nowrap' }}>{m.name}</td>
+              <td><span className={`pill ${m.lean === 'for' ? 'good' : m.lean === 'against' ? 'critical' : 'warning'}`}>{m.lean}</span></td>
+              <td className="tiny sub">{m.reason}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {o.tips.length > 0 && (
+        <ul className="tiny" style={{ margin: '6px 0 0 16px', padding: 0 }}>
+          {o.tips.map((t, i) => <li key={i}>{t}</li>)}
+        </ul>
+      )}
+    </>
+  );
+  if (compact) {
+    return (
+      <details style={{ marginTop: 4 }}>
+        <summary>{head}</summary>
+        {body}
+      </details>
+    );
+  }
+  return (
+    <div>
+      <h3 style={{ marginBottom: 6 }}>How the board is likely to vote</h3>
+      {head}
+      <div style={{ marginTop: 6 }}>{body}</div>
+    </div>
+  );
+}
+
+const human = (k: string) => titleCase(k.replace(/Cents$/, '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase());
+
+/** Edit an action's parameters field by field (money in euros, dates as dates). */
+function ParamEditor({ payload, onChange }: { payload: Record<string, unknown>; onChange: (p: Record<string, unknown>) => void }) {
+  const set = (k: string, v: unknown) => onChange({ ...payload, [k]: v });
+  return (
+    <div className="form-grid">
+      {Object.entries(payload).filter(([k]) => !SERVER_FIELDS.has(k)).map(([k, v]) => {
+        if (typeof v === 'number') {
+          const money = k.endsWith('Cents');
+          return (
+            <label key={k} className="field">{human(k)}{money ? ' (€)' : ''}
+              <input type="number" value={money ? v / 100 : v} onChange={(e) => set(k, e.target.value === '' ? 0 : money ? Math.round(Number(e.target.value) * 100) : Number(e.target.value))} />
+            </label>
+          );
+        }
+        if (typeof v === 'boolean') return <label key={k} className="row small" style={{ gap: 6 }}><input type="checkbox" checked={v} onChange={(e) => set(k, e.target.checked)} />{human(k)}</label>;
+        if (typeof v === 'string' || v === null) {
+          const isDate = typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+          if (/Id$/.test(k) || k === 'templateKey' || k === 'optionKey' || k === 'kind' || k === 'mode') return <label key={k} className="field">{human(k)}<input type="text" value={String(v ?? '')} disabled /></label>;
+          return <label key={k} className="field" style={!isDate ? { gridColumn: '1 / -1' } : undefined}>{human(k)}<input type={isDate ? 'date' : 'text'} value={String(v ?? '')} onChange={(e) => set(k, e.target.value)} /></label>;
+        }
+        return null;
+      })}
+    </div>
+  );
+}
+
 export function ActionReview({ action, onClose }: { action: ActionRecord; onClose: () => void }) {
   const { refresh, toast } = useGame();
   const [a, setA] = useState(action);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [json, setJson] = useState(JSON.stringify(action.payload, null, 2));
+  const [draft, setDraft] = useState<Record<string, unknown>>(action.payload);
   const [rationale, setRationale] = useState(action.rationale ?? '');
-  const needsBoard = a.approvals.some((x) => x.approver === 'board' && x.kind === 'required');
+  const needsBoard = a.needsBoard ?? a.approvals.some((x) => x.approver === 'board' && x.kind === 'required');
   const pending = a.status === 'pending_confirmation';
+  const isPlan = a.type === 'issue_board_proposal';
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -74,35 +165,38 @@ export function ActionReview({ action, onClose }: { action: ActionRecord; onClos
       refresh();
       if (r.ok) onClose();
     });
+  const execute = () =>
+    run(async () => {
+      const r = await api.post(`/actions/${a.id}/execute`);
+      toast(r.message, r.ok ? 'success' : 'error');
+      setA(r.action);
+      refresh();
+    });
   const reject = () =>
     run(async () => {
       const r = await api.post(`/actions/${a.id}/reject`, { reason: 'Rejected by the CEO' });
       setA(r);
-      toast(a.status === 'pending_approval' ? 'Withdrawn from the board agenda.' : 'Proposal rejected. Nothing was changed.');
+      toast(a.status === 'pending_approval' ? 'Withdrawn from the board agenda. Nothing was changed.' : a.status === 'approved' ? 'Withdrawn — it will not be carried out.' : 'Proposal rejected. Nothing was changed.');
       refresh();
       onClose();
     });
   const modify = () =>
     run(async () => {
-      let payload: unknown;
-      try {
-        payload = JSON.parse(json);
-      } catch {
-        throw new Error('Parameters are not valid JSON.');
-      }
-      const n = await api.post(`/actions/${a.id}/modify`, { payload });
+      const n = await api.post(`/actions/${a.id}/modify`, { payload: draft });
       setA(n);
-      setJson(JSON.stringify(n.payload, null, 2));
+      setDraft(n.payload);
       setEditing(false);
-      toast(n.status === 'invalid' ? 'Modified proposal is invalid — see errors.' : 'Proposal updated; review the new consequences.', n.status === 'invalid' ? 'error' : 'info');
+      toast(n.status === 'invalid' ? 'The changed proposal is not valid — see the problems listed.' : 'Proposal updated; review the new consequences.', n.status === 'invalid' ? 'error' : 'info');
       refresh();
     });
 
+  const primaryLabel = isPlan ? 'Put to the board' : needsBoard ? 'Submit to the board' : 'Approve & execute';
   return (
     <Modal
+      wide={!!a.boardOutlook}
       title={
         <span className="row">
-          {a.summary} <Status s={a.status} />
+          {a.summary} <Status s={a.status} label={a.status === 'approved' ? 'Approved — waiting' : undefined} />
         </span>
       }
       onClose={onClose}
@@ -110,25 +204,35 @@ export function ActionReview({ action, onClose }: { action: ActionRecord; onClos
         <>
           {(pending || a.status === 'invalid') && (
             <button className="btn ghost" disabled={busy} onClick={() => setEditing((x) => !x)}>
-              {editing ? 'Cancel edit' : 'Modify'}
+              {editing ? 'Cancel changes' : 'Change parameters'}
             </button>
           )}
-          {(pending || a.status === 'pending_approval') && (
+          {(pending || a.status === 'pending_approval' || a.status === 'approved') && (
             <button className="btn danger" disabled={busy} onClick={reject}>
-              {a.status === 'pending_approval' ? 'Withdraw' : 'Reject'}
+              {a.status === 'pending_confirmation' ? 'Reject' : 'Withdraw'}
             </button>
           )}
           {editing && (
             <button className="btn" disabled={busy} onClick={modify}>
-              Re-validate
+              Re-check
+            </button>
+          )}
+          {pending && !editing && (
+            <button className="btn" disabled={busy} onClick={() => { toast('Kept as a draft — find it under Decisions → Your drafts.'); onClose(); }}>
+              Keep as draft
+            </button>
+          )}
+          {a.status === 'approved' && (
+            <button className="btn primary" disabled={busy} onClick={execute}>
+              Execute now
             </button>
           )}
           {pending && !editing && (
             <button className="btn primary" disabled={busy || a.errors.length > 0} onClick={confirm}>
-              {needsBoard ? 'Submit to the board' : 'Approve & execute'}
+              {primaryLabel}
             </button>
           )}
-          {!pending && !editing && (
+          {!pending && !editing && a.status !== 'approved' && (
             <button className="btn" onClick={onClose}>
               Close
             </button>
@@ -137,12 +241,17 @@ export function ActionReview({ action, onClose }: { action: ActionRecord; onClos
       }
     >
       <div className="small muted">
-        {titleCase(a.type)} · proposed by {a.actorId === 'ceo' ? 'you' : a.actorId} ({a.source === 'llm_proposal' ? 'from a conversation' : a.source}) on {a.simDate} · {a.id}
+        {titleCase(a.type)} · proposed by {a.actorId === 'ceo' ? 'you' : a.actorId} ({a.source === 'llm_proposal' ? 'in a meeting' : a.source}) on {a.simDate} · {a.id}
       </div>
-      {a.rationale && <div className="callout">Rationale: {a.rationale}</div>}
+      {a.nextStep && (
+        <div className={`callout ${a.status === 'invalid' || a.status === 'rejected' ? 'critical' : a.status === 'approved' ? 'warning' : 'info'} small`}>
+          <strong>What happens next: </strong>{a.nextStep}
+        </div>
+      )}
+      {a.rationale && <div className="callout small">Rationale: {a.rationale}</div>}
       {a.errors.length > 0 && (
         <div className="callout critical">
-          <strong>Rejected by the validator — nothing will change:</strong>
+          <strong>Not possible as it stands — nothing will change:</strong>
           <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
             {a.errors.map((e, i) => (
               <li key={i}>{e}</li>
@@ -179,19 +288,21 @@ export function ActionReview({ action, onClose }: { action: ActionRecord; onClos
           ))}
         </div>
       )}
-      {needsBoard && pending && (
+      {a.boardOutlook && <BoardOutlook o={a.boardOutlook} />}
+      {needsBoard && pending && !isPlan && (
         <label className="field">
-          Your case to the board (read by the directors before they vote — a clear, factual case helps a little; it cannot override their priorities)
+          Your case to the board (the directors read it before voting — a clear, factual case helps a little; it cannot override their priorities)
           <textarea rows={3} value={rationale} onChange={(e) => setRationale(e.target.value)} placeholder="Why this is right for Asterion, what it costs, what the alternatives are…" />
         </label>
       )}
       {editing && (
-        <label className="field">
-          Parameters (JSON) — the modified proposal is re-validated from scratch
-          <textarea className="mono" rows={8} value={json} onChange={(e) => setJson(e.target.value)} />
-        </label>
+        <div>
+          <h3 style={{ marginBottom: 6 }}>Change parameters</h3>
+          <ParamEditor payload={draft} onChange={setDraft} />
+          <div className="tiny muted" style={{ marginTop: 4 }}>The changed proposal is checked again from scratch before anything can happen.</div>
+        </div>
       )}
-      {a.result && a.status !== 'pending_confirmation' && (
+      {a.result && !['pending_confirmation', 'approved'].includes(a.status) && (
         <div className="callout good small">
           <strong>Result:</strong> {String((a.result as { summary?: string }).summary ?? (a.result as { message?: string }).message ?? (a.result as { note?: string }).note ?? '')}{' '}
           {Array.isArray((a.result as { details?: string[] }).details) && (a.result as { details: string[] }).details.join(' · ')}

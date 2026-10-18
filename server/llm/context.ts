@@ -26,6 +26,9 @@ import { milestonesOf } from '../engine/projects';
 import { byId, type World } from '../engine/world';
 import { actionCatalogForLlm } from '../actions/registry';
 import { PROJECT_TEMPLATES } from '../actions/templates';
+import { DOCUMENT_TYPES, documentContext } from '../game/documents';
+import { proposalActionIds } from '../engine/board';
+import { addDays } from '../../shared/dates';
 
 export interface ContextSection {
   name: string;
@@ -114,7 +117,7 @@ export interface BuildOpts {
 export function buildContext(db: DB, w: World, opts: BuildOpts): ContextPackage {
   const c = byId(w.characters, opts.characterId);
   if (!c) throw new Error(`Unknown character ${opts.characterId}`);
-  const budget = opts.budgetTokens ?? 7000;
+  const budget = opts.budgetTokens ?? 9000;
   const sections: ContextSection[] = [];
   const entityIds = new Set<string>();
   const add = (name: string, priority: number, text: string) => {
@@ -157,6 +160,41 @@ export function buildContext(db: DB, w: World, opts: BuildOpts): ContextPackage 
     ...coms.map((x) => `[FACT] Commitment ${x.id}: ${x.promisorId === 'ceo' ? 'CEO' : byId(w.characters, x.promisorId)?.name} → ${byId(w.characters, x.promiseeId)?.name ?? x.promiseeId}: "${x.description}" due ${x.dueDate ?? 'n/a'} — ${x.status}${x.dueDate && x.dueDate < d ? ' (OVERDUE)' : ''}.`),
     ...recentBroken.map((x) => `[FACT] Past promise to you: "${x.description}" — ${x.status} on ${x.resolvedDate}.`),
   ].join('\n'));
+
+  // P2 — what the CEO can actually do (so characters only ask for things that exist)
+  add('ceo_capabilities', 2, [
+    'WHAT THE CEO CAN DO IN THIS GAME — only ask the CEO for these:',
+    '- Take a decision (an action from the ACTION CATALOG). Decisions above the CEO’s authority go to the board automatically when confirmed and are carried out if approved.',
+    `- Share a document with you or others: ${DOCUMENT_TYPES.filter((t) => t.key !== 'memo').map((t) => `"${t.title}"`).join(', ')}; or send a written memo. If you need information you do not have, ask for one of these by name.`,
+    '- Meet anyone (you cannot arrange meetings between other people), put a plan to the board, make and keep promises, and let time pass.',
+    'You cannot send emails, reports or files yourself, and you cannot promise to "come back later" with work: give your analysis now, from this context, and be clear about what you do not know.',
+    'When you recommend something concrete, propose the concrete action itself (e.g. start_project, hire_staff), not a board proposal — it is submitted to the board automatically if needed. Only use issue_board_proposal to bundle already-drafted decisions (actionIds) or for a pure strategy endorsement, and say that an endorsement changes nothing by itself.',
+  ].join('\n'));
+
+  // P2 — documents the CEO shared with this character
+  const docs = documentContext(db, w, c.id);
+  add('shared_documents', 2, docs.mine.length ? ['DOCUMENTS THE CEO SENT YOU (snapshots as of their date; newer facts elsewhere in this context override them):', ...docs.mine].join('\n') : '[FACT] The CEO has not sent you any documents recently.');
+
+  // P3 — company knowledge shared across the leadership (internal + board only)
+  if (c.org === 'asterion' || c.org === 'board') {
+    const know: string[] = ['COMPANY KNOWLEDGE (shared across the leadership team; you know this because colleagues talk):'];
+    const decided = db.prepare("SELECT sim_date, summary, status, type, result FROM actions WHERE status IN ('committed','pending_approval','approved') AND type NOT IN ('advance_time','approve_budget','negotiate_contract') AND sim_date >= ? ORDER BY created_at DESC LIMIT 14").all(addDays(d, -90)) as { sim_date: string; summary: string; status: string }[];
+    for (const r of decided.reverse()) know.push(`[FACT] ${r.sim_date}: CEO decision — ${r.summary}${r.status === 'pending_approval' ? ' (submitted to the board, not yet decided)' : r.status === 'approved' ? ' (approved by the board but not yet possible to carry out)' : ''}.`);
+    for (const bp of w.boardProposals.filter((b) => b.status === 'scheduled')) know.push(`[FACT] On the agenda of the board meeting on ${bp.meetingDate}: "${bp.title}" (${bp.id})${proposalActionIds(bp).length ? '' : ' — endorsement only'}.`);
+    for (const bp of w.boardProposals.filter((b) => b.decidedDate && b.decidedDate >= addDays(d, -120))) know.push(`[FACT] ${bp.decidedDate}: the board ${bp.status} "${bp.title}" (${bp.outcomeNote ?? ''}).`);
+    const peerOrg = c.org === 'board' ? ['board', 'asterion'] : ['asterion', 'board'];
+    const convs = db.prepare("SELECT character_id, last_date, summary, title FROM conversations WHERE character_id != ? AND last_date >= ? AND summary != '' ORDER BY last_date DESC LIMIT 12").all(c.id, addDays(d, -60)) as { character_id: string; last_date: string; summary: string }[];
+    let n = 0;
+    for (const cv of convs) {
+      const other = byId(w.characters, cv.character_id);
+      if (!other || !peerOrg.includes(other.org) || n >= 6) continue;
+      if (c.org === 'board' && other.org === 'asterion' && !other.knowledgeScope.includes('board')) continue;
+      n++;
+      know.push(`[FACT] ${cv.last_date}: the CEO met ${other.name} (${other.title}). Gist: ${cv.summary.slice(0, 260)}`);
+    }
+    know.push(...docs.circulated);
+    if (know.length > 1) add('company_knowledge', 3, know.join('\n'));
+  }
 
   // P3 — entities in focus: mentioned + character's domain
   const focusProjects = new Set<string>();

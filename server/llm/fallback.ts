@@ -11,6 +11,7 @@ import { fmtEur, mEur, parseMoney } from '../../shared/money';
 import { modelMonthlyDemand } from '../engine/demand';
 import { cash } from '../engine/ledger';
 import { engineeringFreeFte, liquidity, netLeverage } from '../engine/metrics';
+import { PROJECT_TEMPLATES } from '../actions/templates';
 import { NEGOTIATION_TEMPLATES, lastCounter } from '../engine/negotiation';
 import { byId, type World } from '../engine/world';
 import { mentionedEntities } from './context';
@@ -55,6 +56,25 @@ export function detectProposals(w: World, msg: string, speaker: Character): { pr
   if (/(approve|go ahead|green light|launch).*(euro ?7|vela compliance)/.test(t) || /(euro ?7).*(approve|go ahead)/.test(t)) {
     const p = byId(w.projects, 'PRJ-VELA-E7');
     if (p?.status === 'proposed') P('approve_project', { projectId: p.id }, 'Approve the Vela Euro 7 compliance project.');
+  }
+  // Catalogue projects named in an instruction
+  const projectIntents: [RegExp, string][] = [
+    [/(hybrid|revamp|refresh|facelift|upgrade|modernis|moderniz).{0,40}vela|vela.{0,40}(hybrid|revamp|refresh|facelift|upgrade|modernis|moderniz)/, 'vela_hybrid_refresh'],
+    [/kora gt|premium (line|trim|version)/, 'kora_premium'],
+    [/automation|cost.?down|automate lyon/, 'lyon_cost_down'],
+    [/second (battery )?source|qualify hanseatic/, 'second_battery_source'],
+    [/brno.{0,30}(expansion|capacity|expand)|expand.{0,20}brno/, 'brno_eon_expansion'],
+    [/quality (and warranty )?programme|quality program|warranty programme/, 'quality_programme'],
+    [/direct (online )?sales|online sales/, 'direct_sales'],
+    [/compact ev|\bnova\b|vela successor/, 'compact_ev'],
+  ];
+  if (/(start|launch|begin|kick off|go ahead|green light|revamp|refresh|upgrade|let'?s do|we should do|approve|fund)/.test(t)) {
+    for (const [re, key] of projectIntents) {
+      if (!re.test(t)) continue;
+      const tpl = PROJECT_TEMPLATES.find((x) => x.key === key);
+      if (tpl && !w.projects.some((p) => p.templateKey === key && !['cancelled', 'completed'].includes(p.status))) P('start_project', { templateKey: key }, `Start ${tpl.name} (${fmtEur(tpl.budgetCents)}, ${tpl.fte} engineers${tpl.budgetCents > mEur(50) ? '; needs the board' : ''}).`);
+      break;
+    }
   }
   // Issues
   const optMap: [RegExp, string, string][] = [

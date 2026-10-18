@@ -42,6 +42,12 @@ export function requiredCrew(w: World, f: Factory, d: SimDate): number {
   return f.fixedCrew + f.crewPerDailyUnit * planned;
 }
 
+/** Crew the factory needs once every non-idle line runs at its planned rate (ramp-up complete). */
+export function steadyStateCrew(w: World, f: Factory): number {
+  const planned = w.lines.filter((l) => l.factoryId === f.id && l.status !== 'idle').reduce((a, l) => a + Math.min(l.plannedDailyRate, l.maxDailyRate), 0);
+  return planned > 0 ? f.fixedCrew + f.crewPerDailyUnit * planned : 0;
+}
+
 export function availableCrew(w: World, f: Factory): number {
   const dept = byId(w.departments, f.departmentId);
   if (!dept) return 0;

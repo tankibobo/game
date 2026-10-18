@@ -175,7 +175,7 @@ export const WORLD_TABLES: TableSpec[] = [
   {
     table: 'board_proposals',
     worldKey: 'boardProposals',
-    columns: T(`id:text, title:text, kind:text, actionId:text?, summary:text, rationale:text, analysis:json, submittedDate:text, meetingDate:text, status:text, votes:json, decidedDate:text?, outcomeNote:text?`),
+    columns: T(`id:text, title:text, kind:text, actionId:text?, summary:text, rationale:text, analysis:json, submittedDate:text, meetingDate:text, status:text, votes:json, decidedDate:text?, outcomeNote:text?, actionIds:json`),
   },
   {
     table: 'regulations',

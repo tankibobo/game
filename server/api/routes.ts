@@ -2,13 +2,17 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { z } from 'zod';
 import type { DB } from '../db/connection';
 import { openDb } from '../db/connection';
-import { GameError, advanceTime, confirmAction, createNewGame, forceForecast, getAction, modifyAction, proposeAction, rejectAction } from '../game/game';
+import { GameError, actionView, advanceTime, confirmAction, createNewGame, executeApproved, forceForecast, getAction, modifyAction, proposeAction, rejectAction } from '../game/game';
 import { actionCatalog, company, conversationView, dashboard, finance, history, inboxView, journal, latestForecast, operations, products, projectsView, statement, worldView } from '../game/queries';
 import type { SaveManager } from '../game/saves';
 import { sendMessage, startConversation, submitOffer } from '../llm/conversation';
 import { LlmError, type LlmConfig } from '../llm/provider';
 import { isSimDate } from '../../shared/dates';
 import { SCENARIO_BRIEF } from '../scenario/initial';
+import { loadWorld } from '../db/repo';
+import { DOCUMENT_TYPES, recentDocuments, shareDocument } from '../game/documents';
+import { decisionsView } from '../game/decisions';
+import { MANUAL, askGuide, topicAnswer } from '../guide/guide';
 
 export function buildApi(saves: SaveManager, llm: LlmConfig): express.Router {
   const r = express.Router();
@@ -121,20 +125,25 @@ export function buildApi(saves: SaveManager, llm: LlmConfig): express.Router {
   // ------------------------------------------------------------- actions
   r.post('/actions/propose', (req, res) => {
     const b = body(z.object({ type: z.string(), payload: z.unknown(), idempotencyKey: z.string().min(8).max(100).optional(), rationale: z.string().max(2000).optional() }), req);
-    res.json(proposeAction(db(), { type: b.type, payload: b.payload, idempotencyKey: b.idempotencyKey, rationale: b.rationale ?? null, actorId: 'ceo', source: 'player' }));
+    res.json(actionView(db(), proposeAction(db(), { type: b.type, payload: b.payload, idempotencyKey: b.idempotencyKey, rationale: b.rationale ?? null, actorId: 'ceo', source: 'player' })));
   });
-  r.get('/actions/:id', (req, res) => res.json(getAction(db(), String(req.params.id))));
+  r.get('/actions/:id', (req, res) => res.json(actionView(db(), getAction(db(), String(req.params.id)))));
   r.post('/actions/:id/confirm', (req, res) => {
     const b = body(z.object({ rationale: z.string().max(4000).optional() }), req);
-    res.json(confirmAction(db(), String(req.params.id), 'ceo', { boardRationale: b.rationale }));
+    const out = confirmAction(db(), String(req.params.id), 'ceo', { boardRationale: b.rationale });
+    res.json({ ...out, action: actionView(db(), out.action) });
+  });
+  r.post('/actions/:id/execute', (req, res) => {
+    const out = executeApproved(db(), String(req.params.id));
+    res.json({ ...out, action: actionView(db(), out.action) });
   });
   r.post('/actions/:id/reject', (req, res) => {
     const b = body(z.object({ reason: z.string().max(500).optional() }), req);
-    res.json(rejectAction(db(), String(req.params.id), b.reason));
+    res.json(actionView(db(), rejectAction(db(), String(req.params.id), b.reason)));
   });
   r.post('/actions/:id/modify', (req, res) => {
     const b = body(z.object({ payload: z.unknown() }), req);
-    res.json(modifyAction(db(), String(req.params.id), b.payload));
+    res.json(actionView(db(), modifyAction(db(), String(req.params.id), b.payload)));
   });
 
   // ------------------------------------------------------------- conversations & negotiations
@@ -152,6 +161,38 @@ export function buildApi(saves: SaveManager, llm: LlmConfig): express.Router {
     const b = body(z.object({ terms: z.record(z.string(), z.number()), message: z.string().max(2000).default(''), conversationId: z.string().nullable().optional(), idempotencyKey: z.string().min(8).max(100).optional() }), req);
     res.json(await submitOffer(db(), llm, String(req.params.id), b.terms, b.message, b.conversationId ?? null, b.idempotencyKey));
   });
+  r.get('/decisions', (_req, res) => res.json(decisionsView(db())));
+
+  // ------------------------------------------------------------- how-to guide
+  r.get('/guide/topics', (_req, res) => res.json({ topics: MANUAL.map((t) => ({ id: t.id, title: t.title })) }));
+  r.get('/guide/topics/:id', (req, res) => {
+    const a = topicAnswer(String(req.params.id));
+    if (!a) throw new GameError('Unknown guide topic', 404);
+    res.json(a);
+  });
+  r.post('/guide/ask', async (req, res) => {
+    const b = body(z.object({ question: z.string().min(1).max(600), page: z.string().max(40).nullable().optional() }), req);
+    res.json(await askGuide(saves.activeId() ? db() : null, llm, b.question, b.page ?? null));
+  });
+
+  // ------------------------------------------------------------- documents & memos
+  r.get('/documents', (_req, res) => {
+    const w = loadWorld(db());
+    res.json({
+      types: DOCUMENT_TYPES,
+      options: {
+        project: w.projects.filter((p) => p.status !== 'cancelled').map((p) => ({ id: p.id, label: p.name })),
+        negotiation: w.negotiations.map((n) => ({ id: n.id, label: n.title })),
+        board_proposal: w.boardProposals.filter((b) => b.status !== 'withdrawn').map((b) => ({ id: b.id, label: `${b.title} (${b.status})` })),
+      },
+      recent: recentDocuments(db(), '0000-00-00', 40),
+    });
+  });
+  r.post('/documents/share', (req, res) => {
+    const b = body(z.object({ docKey: z.string(), param: z.string().nullable().optional(), recipientIds: z.array(z.string()).min(1).max(20), note: z.string().max(2000).optional(), conversationId: z.string().nullable().optional() }), req);
+    res.json(shareDocument(db(), b));
+  });
+
   r.post('/inbox/:id/read', (req, res) => {
     db().prepare('UPDATE inbox SET read = 1 WHERE id = ?').run(String(req.params.id));
     res.json({ ok: true });

@@ -63,13 +63,15 @@ export function systemPrompt(c: Character): string {
     'Ground every factual statement in the CONTEXT. Distinguish facts, estimates, beliefs and rumours, and say "I don’t know" when the context does not tell you. Never invent numbers, dates, people, contracts or events.',
     'You cannot change the world. Never claim that something happened (a contract signed, money transferred, a milestone completed, an approval granted) unless the context states it as [FACT]. To get something done, propose an action from the ACTION CATALOG; the simulation validates it and the CEO decides.',
     'Your private walk-away limits in any negotiation must never be stated as numbers.',
+    'Only ask the CEO for things listed under WHAT THE CEO CAN DO. Never ask for emails, files or reports outside that list, never offer to send something later, and never imply you can talk to colleagues on the CEO’s behalf. If you need a document, name the shareable document you need.',
+    'You know what COMPANY KNOWLEDGE says about decisions, the board agenda and the CEO’s meetings with colleagues; stay consistent with it.',
     'Respond ONLY with JSON matching the provided schema.',
   ].join('\n');
 }
 
 async function callCharacterLlm(db: DB, llm: LlmConfig, c: Character, ctxText: string, transcript: ConversationMessage[], summary: string, playerMessage: string, conversationId: string, ctxTokens: number): Promise<{ turn: CharacterTurn | null; error: string | null }> {
   if (!llm.provider.available) return { turn: null, error: llm.provider.statusNote ?? 'deterministic mode (no LLM configured)' };
-  const lines = transcript.slice(-10).map((m) => `${m.role === 'player' ? 'CEO' : c.name}: ${m.content}`);
+  const lines = transcript.slice(-10).map((m) => (m.role === 'system' ? `[${m.content.replace(/^You shared/, 'The CEO shared')} — see DOCUMENTS THE CEO SENT YOU]` : `${m.role === 'player' ? 'CEO' : c.name}: ${m.content}`));
   const user = [
     '=== CONTEXT (assembled from the simulation database) ===',
     ctxText,

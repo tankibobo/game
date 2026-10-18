@@ -1,11 +1,37 @@
+import { useState } from 'react';
 import { BarSeriesChart, LineSeriesChart } from '../components/charts';
 import { Card, D, Empty, EntityLink, Est, Kpi, Loading, Progress, Sev, Status } from '../components/ui';
 import { useGame, useView } from '../ctx';
 import { diffDays, eurM, fmtDate, fmtEur, fmtInt, fmtPct, fmtX } from '../format';
 
+const START_KEY = 'automanager.gettingStarted.hidden';
+
+function GettingStarted({ onHide }: { onHide: () => void }) {
+  const { go, openGuide } = useGame();
+  return (
+    <Card title="Getting started" sub="How a turn works — hide this once you are comfortable." actions={<button className="btn sm ghost" onClick={onHide}>Hide</button>}>
+      <ol className="small" style={{ margin: '0 0 0 18px', padding: 0 }}>
+        <li>Read your messages in <a href="#" onClick={(e) => { e.preventDefault(); go('inbox'); }}>Inbox &amp; meetings</a> — they describe the situation and what people need from you.</li>
+        <li>Talk to people with <strong>Meet</strong> (Company page). They answer from what they know; they can propose decisions and you can send them reports.</li>
+        <li>Open <a href="#" onClick={(e) => { e.preventDefault(); go('decisions'); }}>Decisions</a> to see everything you can decide. <strong>Preview…</strong> never changes anything: it shows the consequences, who approves and what happens next.</li>
+        <li>Decisions above your authority go to the board when you confirm them; the review shows how each director is likely to vote. If approved they are carried out on the meeting day.</li>
+        <li>Advance time with <strong>+1 day / +1 week / +1 month</strong> and read the briefing. Dated effects (hires, consultations, board votes) appear in Decisions → In progress.</li>
+        <li>Not sure how to do something? Click <a href="#" onClick={(e) => { e.preventDefault(); openGuide(); }}>? Guide</a> and ask, e.g. “How do I hire more people?”.</li>
+      </ol>
+    </Card>
+  );
+}
+
 export function Dashboard() {
   const { data: d, error } = useView<any>('/dashboard');
   const { go, reviewAction } = useGame();
+  const [hideStart, setHideStart] = useState(() => {
+    try {
+      return localStorage.getItem(START_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
   if (!d) return <Loading error={error} />;
   const k = d.kpis;
   const fc = d.forecast;
@@ -23,6 +49,16 @@ export function Dashboard() {
   const lm = d.lastMonth?.data;
   const pendingConfirm = d.pendingActions.filter((a: any) => a.status === 'pending_confirmation');
   const pendingBoard = d.pendingActions.filter((a: any) => a.status === 'pending_approval');
+  const waitingApproved = d.pendingActions.filter((a: any) => a.status === 'approved');
+  const who = (id: string) => (id === 'ceo' ? 'you' : d.names?.[id] ?? id);
+  const hide = () => {
+    setHideStart(true);
+    try {
+      localStorage.setItem(START_KEY, '1');
+    } catch {
+      /* storage unavailable */
+    }
+  };
   const s = base?.summary;
   return (
     <div>
@@ -32,6 +68,7 @@ export function Dashboard() {
           <p>{d.meta.companyName} · fiscal year {k.yearLabel} · rating {d.meta.creditRating} ({d.meta.ratingOutlook})</p>
         </div>
       </div>
+      {!hideStart && diffDays(today, d.meta.startDate ?? today) < 120 && <div style={{ marginBottom: 14 }}><GettingStarted onHide={hide} /></div>}
       <div className="kpis">
         <Kpi label="Cash" value={fmtEur(k.cashCents)} hint={`RCF drawn ${fmtEur(k.rcfDrawnCents)} of ${fmtEur(k.rcfLimitCents)}`} />
         <Kpi label="Liquidity (cash + undrawn RCF)" value={fmtEur(k.liquidityCents)} hint="EIB covenant: ≥ €400m" tone={k.liquidityCents < 45_000_000_000 ? 'critical' : undefined} />
@@ -121,25 +158,34 @@ export function Dashboard() {
               <div className="pre small">{d.briefing.body}</div>
             </Card>
           )}
-          <Card title="Decisions waiting for you" flush>
-            {pendingConfirm.length === 0 && pendingBoard.length === 0 ? (
-              <Empty>No pending proposals.</Empty>
+          <Card title="Decisions waiting for you" flush actions={<button className="btn sm" onClick={() => go('decisions')}>Decisions</button>}>
+            {pendingConfirm.length === 0 && pendingBoard.length === 0 && waitingApproved.length === 0 ? (
+              <Empty>Nothing waiting. Take decisions on the Decisions page.</Empty>
             ) : (
               <div className="list">
                 {pendingConfirm.map((a: any) => (
                   <div key={a.id} className="list-item clickable" onClick={() => reviewAction(a.id)}>
                     <div style={{ flex: 1 }}>
                       <div className="t">{a.summary}</div>
-                      <div className="small muted">{a.source === 'llm_proposal' ? `proposed by ${a.actorId} in a meeting` : 'your draft'} · {a.simDate}</div>
+                      <div className="small muted">{a.source === 'llm_proposal' ? `proposed by ${who(a.actorId)} in a meeting` : 'your draft'} · {fmtDate(a.simDate)}</div>
                     </div>
                     <Status s={a.status} label="review" />
+                  </div>
+                ))}
+                {waitingApproved.map((a: any) => (
+                  <div key={a.id} className="list-item clickable" onClick={() => reviewAction(a.id)}>
+                    <div style={{ flex: 1 }}>
+                      <div className="t">{a.summary}</div>
+                      <div className="small muted">approved by the board — not possible yet; see why</div>
+                    </div>
+                    <Status s="delayed" label="waiting" />
                   </div>
                 ))}
                 {pendingBoard.map((a: any) => (
                   <div key={a.id} className="list-item clickable" onClick={() => reviewAction(a.id)}>
                     <div style={{ flex: 1 }}>
                       <div className="t">{a.summary}</div>
-                      <div className="small muted">awaiting board vote on {fmtDate(d.board.nextMeeting)}</div>
+                      <div className="small muted">awaiting the board vote on {fmtDate(d.board.scheduled.find((p: any) => (p.actionIds ?? []).includes(a.id) || p.actionId === a.id)?.meetingDate ?? d.board.nextMeeting)}</div>
                     </div>
                     <Status s="pending_approval" label="board" />
                   </div>

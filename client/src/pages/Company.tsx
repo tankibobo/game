@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { Card, Empty, Loading, Progress, Status, Tabs } from '../components/ui';
+import { ShareForm } from '../components/ShareForm';
 import { useGame, useView } from '../ctx';
 import { fmtDate, fmtEur, fmtInt, titleCase } from '../format';
 
@@ -20,7 +21,7 @@ function trustTone(t: number) {
 export function Company() {
   const { data: d, error } = useView<any>('/company');
   const { go, toast, nav } = useGame();
-  const [tab, setTab] = useState<'people' | 'org' | 'board' | 'rules'>('people');
+  const [tab, setTab] = useState<'people' | 'org' | 'board' | 'rules' | 'share'>('people');
   const [sel, setSel] = useState<string | null>(nav.param ?? null);
   useEffect(() => {
     if (nav.param) setSel(nav.param);
@@ -38,7 +39,7 @@ export function Company() {
           <p>People, organisation, board and approval rights. Trust is shaped by what you do — kept and broken promises, decisions and how you treat people.</p>
         </div>
       </div>
-      <Tabs value={tab} onChange={setTab} tabs={[['people', 'People'], ['org', 'Departments'], ['board', 'Board'], ['rules', 'Approval rights']]} />
+      <Tabs value={tab} onChange={setTab} tabs={[['people', 'People'], ['org', 'Departments'], ['board', 'Board'], ['rules', 'Approval rights'], ['share', 'Share a document']]} />
       {tab === 'people' && (
         <div className="grid g-main">
           <div className="stack">
@@ -150,11 +151,15 @@ export function Company() {
               </tbody>
             </table>
           </div>
-          <div className="tiny muted" style={{ padding: '6px 14px' }}>Hiring and job cuts are decided in Operations (per department). Payroll is base cost × wage index (collective agreements raise it).</div>
+          <div className="row tiny muted" style={{ padding: '6px 14px' }}>
+            <span>Hire or reduce headcount in Decisions → People &amp; communication (also Operations → Workforce). Payroll is base cost × wage index (collective agreements raise it).</span>
+            <span className="spacer" />
+            <button className="btn sm" onClick={() => go('decisions', 'people')}>Hire or reduce…</button>
+          </div>
         </Card>
       )}
       {tab === 'board' && (
-        <Card title="Board of directors" sub="Six voting directors; ties are broken by the chair. Votes follow each director's priorities, the proposal's computed impact, and their trust in you." flush>
+        <Card title="Board of directors" sub="Six voting directors; ties are broken by the chair. Each director weighs what a proposal itself does — its cash, recurring profit, jobs, risk, strategic fit and whether it is unavoidable — by their own priorities, then adds their trust in you and the board's confidence. Before you submit anything, its review shows how each director is likely to vote." flush>
           <table>
             <thead><tr><th>Director</th><th>Represents</th><th>Trust</th><th>Weights what most</th></tr></thead>
             <tbody>
@@ -171,6 +176,11 @@ export function Company() {
               })}
             </tbody>
           </table>
+        </Card>
+      )}
+      {tab === 'share' && (
+        <Card title="Share a document or send a memo" sub="Reports are built from the company's current figures. Recipients remember them in later meetings; colleagues learn they were circulated. Sharing does not change the company.">
+          <ShareForm />
         </Card>
       )}
       {tab === 'rules' && (
