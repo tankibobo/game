@@ -26,8 +26,11 @@ function Article({ a, lead }: { a: any; lead?: boolean }) {
 /** The trade press: the month's events as a newspaper, with the competitive landscape. */
 export function News() {
   const { data: d, error } = useView<any>('/news?months=6');
-  const [i, setI] = useState(0);
+  const [picked, setI] = useState<number | null>(null);
   if (!d) return <Loading error={error} />;
+  // Open on the latest edition with real content (the current month may only have just begun).
+  const count = (e: any) => e.sections.reduce((a: number, s: any) => a + s.items.length, 0);
+  const i = picked ?? (d.editions.length > 1 && count(d.editions[0]) <= 1 ? 1 : 0);
   const ed = d.editions[Math.min(i, Math.max(0, d.editions.length - 1))];
   const lead = ed?.sections.flatMap((s: any) => s.items).find((x: any) => x.id === ed.lead);
   const series = [{ key: 'price', label: 'Share price (€)', color: SERIES[0] }];

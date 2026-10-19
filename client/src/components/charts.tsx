@@ -50,7 +50,7 @@ export function LineSeriesChart({ data, x, series, unit, refY, refLabel, tall, f
           <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
             <CartesianGrid stroke="var(--grid)" vertical={false} />
             <XAxis dataKey={x} {...axis} />
-            <YAxis {...axis} width={56} domain={fitY ? ['auto', 'auto'] : undefined} tickFormatter={(v) => (unit === '€m' ? `€${Math.round(v).toLocaleString('en-GB')}m` : fitY ? v.toLocaleString('en-GB', { maximumFractionDigits: 1 }) : Math.round(v).toLocaleString('en-GB'))} />
+            <YAxis {...axis} width={56} domain={fitY ? ['auto', 'auto'] : undefined} tickFormatter={(v) => (unit === '€m' ? `€${Math.round(v).toLocaleString('en-GB')}m` : fitY ? v.toLocaleString('en-GB', { maximumFractionDigits: 2 }) : Math.round(v).toLocaleString('en-GB'))} />
             <Tooltip content={<TT unit={unit} />} cursor={{ stroke: 'var(--axis)' }} />
             {refY !== undefined && <ReferenceLine y={refY} stroke="var(--critical)" strokeWidth={1} label={{ value: refLabel, position: 'insideTopLeft', fill: 'var(--critical-text)', fontSize: 11 }} />}
             {series.map((s) => (
