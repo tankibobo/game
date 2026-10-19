@@ -39,6 +39,8 @@ const run = async (viewport, tag) => {
   console.log(`• ${tag} coach headline:`, await page.locator('.coach .callout').first().innerText());
   const first = page.locator('.coach-card').first();
   console.log(`• ${tag} first advice:`, (await first.innerText()).split('\n').slice(0, 3).join(' | '));
+  await page.locator('.coach-card').first().getByRole('button', { name: 'Show me how' }).click().catch(() => {});
+  await wait(300);
   const preview = page.locator('.coach-card .btn.primary').first();
   if (await preview.count()) {
     await preview.click();
@@ -50,12 +52,11 @@ const run = async (viewport, tag) => {
     await wait(400);
   }
   // Ask tab: advice question
-  await page.getByRole('button', { name: '? Guide' }).click().catch(() => {});
+  await page.getByRole('button', { name: '? Coach' }).click().catch(() => {});
   await wait(500);
-  await page.getByRole('tab', { name: /Ask/ }).click();
-  await wait(300);
+    await wait(300);
   await page.getByLabel('Your question').fill('What should I do? The board keeps firing me');
-  await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  await page.locator('.guide-input').getByRole('button', { name: 'Ask' }).click();
   await wait(1500);
   await shot('06-ask');
   console.log(`• ${tag} ask answer:`, (await page.locator('.guide-a').last().innerText()).slice(0, 300).replace(/\n/g, ' | '));

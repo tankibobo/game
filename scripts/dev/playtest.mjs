@@ -88,7 +88,8 @@ await page.goto(`${base}/#/company`);
 await wait(1000);
 await page.getByRole('row', { name: /Margarethe Holm/ }).getByRole('button', { name: 'Meet' }).click();
 await wait(1200);
-await page.locator('.card', { hasText: 'Share a document' }).getByRole('button', { name: 'Send' }).click();
+await page.locator('.card', { hasText: 'Share a document' }).locator('input[type=checkbox]').first().check();
+await page.locator('.card', { hasText: 'Share a document' }).getByRole('button', { name: /^Send/ }).click();
 await wait(1200);
 await page.getByLabel('Your message').fill('I sent you the forecast. How much runway do we have, and should we refinance now?');
 await page.getByRole('button', { name: 'Send', exact: true }).first().click();
@@ -96,20 +97,19 @@ await wait(2500);
 await shot('09-meeting', true);
 
 // Guide
-await page.getByRole('button', { name: '? Guide' }).click();
+await page.getByRole('button', { name: '? Coach' }).click();
 await wait(500);
 await shot('10-guide-coach');
-await page.getByRole('tab', { name: /Ask/ }).click();
 await wait(300);
 await page.getByLabel('Your question').fill('How do I hire more people?');
-await page.getByRole('button', { name: 'Ask', exact: true }).click();
+await page.locator('.guide-input').getByRole('button', { name: 'Ask' }).click();
 await wait(1500);
 await shot('11-guide-answer');
 await page.getByLabel('Your question').fill('The board approved the Vela revamp but nothing happened');
-await page.getByRole('button', { name: 'Ask' }).click();
+await page.locator('.guide-input').getByRole('button', { name: 'Ask' }).click();
 await wait(1500);
 await shot('12-guide-answer2');
-await page.getByRole('button', { name: 'Close guide' }).click();
+await page.getByRole('button', { name: 'Close coach' }).click();
 
 // Advance past the board meeting
 await page.getByRole('button', { name: '+1 month' }).click();

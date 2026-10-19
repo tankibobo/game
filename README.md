@@ -93,19 +93,21 @@ partially updated.
 
 ## How to play
 
-New to the game? The dashboard opens with a **Getting started** card. **? Guide** (top bar)
-has two tabs:
+New to the game? The dashboard opens with a **Getting started** card. Two buttons in the top
+bar are always there:
 
-- **Coach** — reads the live simulation and tells you what to fix first and why: where board
-  confidence is heading at the next meeting and which drivers push it, your mandate score,
-  and a prioritised to-do list (“Do now / Soon / When you can”). Most items carry a
-  **Preview** button that prepares the decision for you to check and confirm. The advice is
-  computed by the engine (never invented), and an automated player that simply follows it
-  wins every scenario (see *Testing*).
-- **Ask / How do I…?** — step-by-step answers from the manual (“How do I hire more
-  people?”), and advice from the Coach when you ask what to do (“What should I do first?”,
-  “Why is the board unhappy?”). With Claude available the answer is phrased by Claude from
-  the manual and the Coach's analysis.
+- **? Coach** — a guide who sits *outside* the game (no character hears it). Ask it anything:
+  how to do something (“How do I hire more people?”), why something happens (“Why am I losing
+  money?”, “Is my marketing working?” — answered from the company's own reports), or what to
+  do next. Its **read of your company** shows where board confidence is heading and what to
+  look at first, with the reasoning; the exact steps and a ready-made preview appear only when
+  you click **Show me how**. The advice is computed by the engine (never invented), and an
+  automated player that simply follows it wins every scenario (see *Testing*). With Claude
+  available the answers are phrased by Claude from the manual, the live figures and that
+  analysis.
+- **Ask someone** — a quick question to anyone, no meeting needed. Executives answer from
+  their own department's figures and attach the report (figures, tables, charts); “Continue as
+  a meeting” turns it into a conversation.
 
 ### Scenarios, difficulty and seeds — and how to win
 
@@ -133,8 +135,9 @@ score if you were judged today.
   board). **Preview…** never changes anything: the review shows the calculated consequences,
   who must approve, *what happens next*, and — for board items — how each director is likely
   to vote and why. Then **Approve & execute**, **Submit to the board**, **Keep as draft**,
-  **Change parameters** (re-checked from scratch) or **Reject**. The same decisions are also
-  available as buttons on the Products, Projects, Operations and Finance pages.
+  **Change parameters** (re-checked from scratch) or **Reject**. Other pages show the state of
+  the company and link here (“Change in Decisions →”); only actions on one specific item (approve
+  *this* project, answer *this* issue) also sit next to the item.
 - **The board.** Decisions above your authority (spending >€50m, bank debt >€100m, hiring
   >500, restructuring >300 positions, bonds, equity, asset sales, cancelling a vehicle
   programme) are put to the next meeting automatically when you confirm them and **carried
@@ -147,25 +150,55 @@ score if you were judged today.
 - **In progress** lists everything already set in motion, with dates: board votes, hires
   arriving, consultations ending, lender reviews, agreements to sign, approved decisions
   waiting. **Recent decisions** shows what was carried out, rejected or withdrawn.
-- **Meetings** (Company → *Meet*, or Inbox → Meetings): talk naturally — ask, instruct,
+- **Meetings** (People & divisions → *Meet*, or Inbox → Meetings): talk naturally — ask, instruct,
   persuade, promise. Characters push back when their incentives or the facts warrant it.
   Concrete proposals they make appear under their reply (and in Decisions → Your drafts).
   They know what the leadership knows: your recent decisions, the board agenda, and the gist
   of your meetings with their colleagues.
-- **Share documents and memos** (in a meeting, Company → Share a document, or Decisions →
-  People & communication): forecast, financial results, liquidity & debt, project status,
-  production & sales, workforce, a board proposal, a negotiation's status, your decision log,
-  or a memo in your own words. Each is a dated snapshot of the company's figures; recipients
-  use it in later meetings and colleagues learn it was circulated. When a character asks for
-  information, this is how you give it to them.
-- **Negotiations** (Inbox → Negotiations, or the side panel in a meeting with the
-  counterparty): table offers term by term plus an argument. The counterparty accepts,
-  counters, asks for internal approval, or breaks off. An agreement must still be **signed**.
-- **Projects**: approve, start from the catalogue (each entry says why it cannot start now,
-  if it cannot), re-plan (target date, staffing, budget, descope) or cancel; act on issues
-  via their documented options. The Vela mild-hybrid refresh replaces the proposed Euro 7
+- **Documents.** A document is one or more reports from a described catalogue (P&L
+  breakdown, margin per car, cash, forecast, debt, sales, market, marketing performance,
+  production, supply, quality, CO₂, workforce, projects, one project, contracts, a
+  negotiation, a board proposal, the decision log) plus an optional memo — each can be
+  previewed before sending (in a meeting, People & divisions → Share a document, or Decisions →
+  People & communication). Every report is built from the live simulation: figures, tables
+  and charts with a “Show the numbers” table. Colleagues also exchange documents among
+  themselves and with you; when they need something they ask for a report by name and a
+  **Send it** button appears under their reply.
+- **Your executives act on their own.** The CFO and the sales director report every month,
+  operations, HR and engineering every quarter (report attached); they prepare decisions when
+  they see a problem (production, a campaign, hiring, funding — in Decisions → Your drafts,
+  “Prepared on their own initiative”), react to what you do (price changes, cuts, cancelled
+  projects or deals, signed contracts), remind you of deadlines and chase unsigned agreements.
+- **Deals** (Decisions → Deals & contracts): open talks yourself — supply contracts, the wage
+  agreement, dealer support, **fleet orders** with a rental & leasing company (cars delivered
+  from factory stock at a discount) or **contract assembly** for a competitor at Lyon (a fee
+  per car, using Lyon capacity and crews). Negotiate in Inbox → Negotiations or beside a
+  meeting with the counterparty: offers term by term plus an argument; they accept, counter,
+  ask for internal approval or break off. You can **walk away** from talks or **decline** an
+  agreement. An agreement binds nobody until it is **signed** — Legal reviews the terms in the
+  signing preview; unsigned agreements are chased and lapse after 45 days.
+- **Marketing**: an always-on budget (diminishing returns) and **campaigns** for one model for
+  2–16 weeks. The Marketing performance report measures every campaign (extra cars, extra
+  contribution) and says whether another €1m a month would pay for itself.
+- **People & divisions → Divisions** explains each division — what it does, why it matters,
+  its key figures right now and the decisions that belong to it (including why Legal makes
+  you sign contracts).
+- **News**: the trade paper — each month's results, market shares, competitors' promotions,
+  recalls and failures, tariffs and regulation, our share price — each with “What it means for
+  Asterion”. Competitors' moves really change demand; the share price follows results,
+  liquidity, the Eon and board confidence (and prices any rights issue).
+- **Projects**: approve, start from the catalogue (sixteen projects, each saying what it will
+  change and why it cannot start now, if it cannot), or **design your own** (what to improve,
+  where, how big — the engine sizes it and the real result is 60–120% of the estimate);
+  re-plan or cancel; act on issues via their documented options. Every completed project
+  changes the simulation (costs, crews, capacity, appeal, quality, CO₂, features of the cars,
+  marketing efficiency, reach) and its **What it changed** card shows the measured
+  before → after; the people affected react (the union over automation, dealers over online
+  sales). Completed catalogue projects are no longer offered. The Vela mild-hybrid refresh replaces the proposed Euro 7
   compliance project if that one was never approved.
-- **Finance**: statements straight from the ledger, 3-scenario forecasts, debt & covenants,
+- **Finance**: **Where the money goes** (a waterfall from revenue to net income, every cost
+  line with its share of revenue, monthly results, break-even volume, margin per car by model
+  — the full-year forecast before the first month closes), statements straight from the ledger, 3-scenario forecasts, debt & covenants,
   financing requests (bank loan, bond, rights issue, shareholder loan, sale-and-leaseback,
   covenant waiver, RCF extension, personal investment, RCF). Time pauses when an offer
   arrives — offers expire within days.
@@ -370,7 +403,7 @@ preconditions, kind (causal / random shock / scheduled), magnitude and cooldown.
 npm test
 ```
 
-96 tests across eleven suites. Mapping to the acceptance criteria:
+108 tests across twelve suites. Mapping to the acceptance criteria:
 
 | # | Criterion | Test |
 |---|---|---|
@@ -390,6 +423,8 @@ npm test
 | 14 | Invalid/rejected actions leave state unchanged | `actions.test.ts` |
 | 15 | Displayed figures come from authoritative state | `world.test.ts` |
 | — | Scenario: delay Eon → forecast changes → board reacts → consistent after restart | `acceptance.test.ts` |
+| — | Living company: completed projects change the simulation and leave the catalogue; own projects; campaigns measured; fleet orders delivered and invoiced; contract assembly; walking away / declining; unsigned agreements lapse; documents with real reports; quick questions; executives' own reports and drafts; share price, competitors and the newspaper; no duplicate submissions | `living.test.ts` |
+| — | Coach outside the game: how-to, “why” from the company's figures, advice as hints | `guide.test.ts` |
 | — | Board judges proposals on their merits; approved decisions are carried out (or wait with a reason); plans; endorsements; engineer conflicts | `board_flow.test.ts` |
 | — | Characters share one picture: capabilities, shared documents, company knowledge | `characters.test.ts` |
 | — | Guide finds the right how-to, advises from the Coach when asked, only names buttons that exist in the UI | `guide.test.ts` |
@@ -419,7 +454,7 @@ needed.
   with Claude-voiced characters were not played in the build environment. The API-key
   provider is type-checked against the official SDK but was not run against the API.
 - One market (Europe), two segments; competitors are rule-based (launch timelines, price
-  responses, tariff exposure), not full agents.
+  responses, promotions, recalls, financial distress, tariff exposure), not full agents.
 - Workforce is modelled per department, not per employee; ~25 named characters.
 - Inventory valuation is variable costing; no raw-material inventory; components are
   consignment stock.

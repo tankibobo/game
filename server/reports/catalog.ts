@@ -570,6 +570,7 @@ export function describeEffect(w: World, e: World['projects'][number]['completio
     case 'material_pct': return `Material cost ${(e.pct * 100).toFixed(1)}% on ${mn(e.modelId)}.`;
     case 'absenteeism': return `Absenteeism ${e.delta > 0 ? '+' : ''}${e.delta} points at ${e.factoryId === '*' ? 'all plants' : byId(w.factories, e.factoryId)?.name ?? e.factoryId}.`;
     case 'trust': return `${byId(w.characters, e.characterId)?.name ?? e.characterId} ${e.delta > 0 ? 'more' : 'less'} trusting.`;
+    case 'model_feature': return `New on ${mn(e.modelId)}: ${e.feature}.`;
   }
   return 'Effect recorded.';
 }

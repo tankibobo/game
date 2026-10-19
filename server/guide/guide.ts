@@ -158,7 +158,7 @@ function safeCoach(db: DB | null): CoachReport | null {
 function fromCoach(r: CoachReport): GuideAnswer {
   const top = r.advice.slice(0, 3);
   const c = r.confidence;
-  const answer = `${r.headline} What weighs most on the board right now: ${c.drivers.filter((d) => d.delta < 0).slice(0, 3).map((d) => `${d.label.charAt(0).toLowerCase()}${d.label.slice(1)} (${d.delta.toFixed(0)})`).join(', ') || 'nothing negative'}.${top.length ? ` Where I'd look first: ${top.map((a, i) => `${i + 1}) ${a.title}`).join('; ')}.` : ''}`;
+  const answer = `${r.headline} What weighs most on the board right now: ${c.drivers.filter((d) => d.delta < 0).slice(0, 3).map((d) => `${/^[A-Z][a-z]/.test(d.label) ? d.label.charAt(0).toLowerCase() + d.label.slice(1) : d.label} (${d.delta.toFixed(0)})`).join(', ') || 'nothing negative'}.${top.length ? ` Where I'd look first: ${top.map((a, i) => `${i + 1}) ${a.title}`).join('; ')}.` : ''}`;
   const best = top[0];
   return {
     answer,
