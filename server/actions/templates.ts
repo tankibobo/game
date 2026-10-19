@@ -66,7 +66,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     capitalize: true,
     priority: 'high',
     linkedModelId: 'MDL-VELA',
-    durationDays: 280,
+    durationDays: 300,
     milestones: [
       { name: 'Hybrid system integration', description: '48V system and calibration.', work: 20_000, externalCents: mEur(60) },
       { name: 'Facelift tooling', description: 'New front end and interior tooling.', work: 12_300, externalCents: mEur(55) },
@@ -103,7 +103,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     capitalize: true,
     priority: 'medium',
     linkedModelId: 'MDL-KORA',
-    durationDays: 300,
+    durationDays: 350,
     milestones: [
       { name: 'Design & engineering', description: 'GT trim and e-axle integration.', work: 18_000, externalCents: mEur(35) },
       { name: 'Supplier tooling', description: 'Interior and chassis tooling.', work: 10_000, externalCents: mEur(30) },
@@ -171,7 +171,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     capitalize: true,
     priority: 'high',
     linkedModelId: 'MDL-EON',
-    durationDays: 240,
+    durationDays: 290,
     milestones: [
       { name: 'Interface adaptation', description: 'Mechanical/electrical integration.', work: 7_000, externalCents: mEur(10) },
       { name: 'Validation', description: 'Abuse and durability tests of the alternative pack.', work: 9_000, externalCents: mEur(18) },
@@ -201,7 +201,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     capitalize: true,
     priority: 'medium',
     linkedModelId: 'MDL-EON',
-    durationDays: 300,
+    durationDays: 420,
     milestones: [
       { name: 'Engineering & permits', description: 'Plant engineering and permits.', work: 5_000, externalCents: mEur(20) },
       { name: 'Construction & installation', description: 'Hall extension and stations.', work: 9_000, externalCents: mEur(80) },
@@ -229,7 +229,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     capitalize: false,
     priority: 'medium',
     linkedModelId: null,
-    durationDays: 210,
+    durationDays: 270,
     milestones: [
       { name: 'Diagnostics & audits', description: 'Top-20 defect analysis.', work: 6_000, externalCents: mEur(12) },
       { name: 'Countermeasures', description: 'Process and supplier fixes.', work: 7_000, externalCents: mEur(20) },
@@ -259,7 +259,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     capitalize: false,
     priority: 'low',
     linkedModelId: null,
-    durationDays: 240,
+    durationDays: 290,
     milestones: [
       { name: 'Platform build', description: 'Configurator and order management.', work: 5_000, externalCents: mEur(25) },
       { name: 'Pilot markets', description: 'France and Spain launch.', work: 3_000, externalCents: mEur(15) },
@@ -289,7 +289,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     capitalize: true,
     priority: 'medium',
     linkedModelId: 'MDL-KORA',
-    durationDays: 270,
+    durationDays: 390,
     milestones: [
       { name: 'Engineering & orders', description: 'Layout and equipment orders.', work: 4_000, externalCents: mEur(18) },
       { name: 'Installation', description: 'Install during the summer shutdown.', work: 6_000, externalCents: mEur(42) },
@@ -317,7 +317,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     capitalize: true,
     priority: 'medium',
     linkedModelId: 'MDL-KORA',
-    durationDays: 330,
+    durationDays: 320,
     milestones: [
       { name: 'Battery & charger integration', description: 'Packaging and calibration.', work: 16_000, externalCents: mEur(40) },
       { name: 'Validation & homologation', description: 'Testing and WLTP certification.', work: 12_000, externalCents: mEur(35) },
@@ -349,7 +349,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     capitalize: true,
     priority: 'medium',
     linkedModelId: 'MDL-EON',
-    durationDays: 270,
+    durationDays: 250,
     milestones: [
       { name: 'Module & thermal integration', description: 'Engineering and validation.', work: 9_000, externalCents: mEur(28) },
       { name: 'Software & homologation', description: 'Charging software and certification.', work: 6_000, externalCents: mEur(20) },
@@ -379,7 +379,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     capitalize: true,
     priority: 'low',
     linkedModelId: null,
-    durationDays: 240,
+    durationDays: 380,
     milestones: [
       { name: 'Audits & design', description: 'Energy audits per plant.', work: 2_500, externalCents: mEur(6) },
       { name: 'Retrofit works', description: 'Installation in all plants.', work: 4_000, externalCents: mEur(36) },
@@ -408,7 +408,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     capitalize: false,
     priority: 'medium',
     linkedModelId: null,
-    durationDays: 270,
+    durationDays: 290,
     milestones: [
       { name: 'Tear-downs & ideas', description: 'Benchmarking and idea generation.', work: 6_000, externalCents: mEur(8) },
       { name: 'Validation & re-sourcing', description: 'Validate changes and re-source.', work: 8_000, externalCents: mEur(18) },
@@ -434,7 +434,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     capitalize: false,
     priority: 'low',
     linkedModelId: null,
-    durationDays: 180,
+    durationDays: 290,
     milestones: [
       { name: 'Platform', description: 'CRM and data integration.', work: 2_500, externalCents: mEur(14) },
       { name: 'Roll-out to dealers', description: 'Lead routing and training.', work: 1_500, externalCents: mEur(8) },
@@ -459,7 +459,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     capitalize: false,
     priority: 'low',
     linkedModelId: null,
-    durationDays: 240,
+    durationDays: 350,
     milestones: [
       { name: 'Programme design', description: 'Criteria and dealer agreements.', work: 800, externalCents: mEur(4) },
       { name: 'Co-funded upgrades', description: 'Showrooms and chargers.', work: 1_600, externalCents: mEur(30) },
@@ -485,7 +485,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     capitalize: false,
     priority: 'low',
     linkedModelId: null,
-    durationDays: 210,
+    durationDays: 320,
     milestones: [
       { name: 'Academy set-up', description: 'Curriculum and trainers.', work: 800, externalCents: mEur(6) },
       { name: 'Workstations & training', description: 'Ergonomics and training waves.', work: 1_400, externalCents: mEur(12) },
@@ -517,7 +517,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     capitalize: true,
     priority: 'high',
     linkedModelId: null,
-    durationDays: 1_150,
+    durationDays: 1240,
     milestones: [
       { name: 'Concept & platform decisions', description: 'Architecture and sourcing.', work: 80_000, externalCents: mEur(120) },
       { name: 'Design freeze', description: 'Exterior/interior freeze.', work: 120_000, externalCents: mEur(180) },

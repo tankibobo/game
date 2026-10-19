@@ -203,24 +203,28 @@ function buildPnl({ w }: Ctx): Built {
   const ytdMv = w.meta.ytdByAccount;
   const closed = gameMonths(w, 12);
   const useYtd = Object.keys(ytdMv).length > 0 && Math.abs(plTotals(plBreakdown(ytdMv)).revenue) > 0;
-  const periodLabel = useYtd ? `${d.slice(0, 4)} to date` : 'FY2026 (before you arrived)';
+  const fc = w.meta.lastForecastSummary;
+  const fcMv = fc?.fyByAccount && Object.keys(fc.fyByAccount).length ? fc.fyByAccount : null;
   const blocks: ReportBlock[] = [];
-  if (!useYtd) {
+  if (!useYtd && !fcMv) {
     blocks.push({ kind: 'text', text: 'No sales have been booked yet this year; the first month closes at the end of January. FY2026 figures for reference.' });
-    const fc = w.meta.lastForecastSummary;
-    blocks.push({ kind: 'kpis', items: [{ label: 'FY2026 revenue', value: fmtEur(FY2026.revenueCents) }, { label: 'FY2026 EBITDA', value: fmtEur(FY2026.ebitdaCents) }, { label: 'FY2026 operating profit', value: fmtEur(FY2026.ebitCents), hint: pct(FY2026.ebitCents / FY2026.revenueCents) }, ...(fc ? [{ label: `${d.slice(0, 4)} operating profit (forecast)`, value: fmtEur(fc.fyEbitCents), hint: `on revenue ${fmtEur(fc.fyRevenueCents)}`, tone: tone(fc.fyEbitCents < 0) } as const] : [])] });
-    const ue = unitEconomics(w).filter((x) => x.monthlyUnits > 0);
-    if (ue.length) blocks.push({ kind: 'bullets', title: 'What each car earns today', items: ue.map((x) => ({ text: `${x.name}: ${eurUnit(x.contributionCents)} contribution per car, ${eurUnit(x.marginCents)} left after plant costs (${int(x.monthlyUnits)} cars/month).`, tone: tone(x.marginCents < 0) })) });
-    return { title: 'Profit & loss: where the money goes', summary: `No month has closed yet this year. Last year Asterion made ${fmtEur(FY2026.ebitCents)} operating profit on ${fmtEur(FY2026.revenueCents)} revenue (${pct(FY2026.ebitCents / FY2026.revenueCents)}).${fc ? ` This year’s forecast: ${fmtEur(fc.fyEbitCents)}.` : ''}`, blocks };
+    blocks.push({ kind: 'kpis', items: [{ label: 'FY2026 revenue', value: fmtEur(FY2026.revenueCents) }, { label: 'FY2026 EBITDA', value: fmtEur(FY2026.ebitdaCents) }, { label: 'FY2026 operating profit', value: fmtEur(FY2026.ebitCents), hint: pct(FY2026.ebitCents / FY2026.revenueCents) }] });
+    return { title: 'Profit & loss: where the money goes', summary: `No month has closed yet this year. Last year Asterion made ${fmtEur(FY2026.ebitCents)} operating profit on ${fmtEur(FY2026.revenueCents)} revenue.`, blocks };
   }
-  const p = plBreakdown(ytdMv);
+  const ytdMvUsed = useYtd ? ytdMv : fcMv!;
+  const periodLabel = useYtd ? `${d.slice(0, 4)} to date` : `${d.slice(0, 4)} full year (forecast)`;
+  if (!useYtd) {
+    const t0 = plTotals(plBreakdown(fcMv!));
+    blocks.push({ kind: 'text', text: `No month has closed yet this year, so this is the forecast for the whole of ${d.slice(0, 4)} if nothing changes (an estimate from the simulation). Last year (FY2026, before you arrived): revenue ${fmtEur(FY2026.revenueCents)}, EBITDA ${fmtEur(FY2026.ebitdaCents)}, operating profit ${fmtEur(FY2026.ebitCents)}. This year: revenue ${fmtEur(t0.revenue)} (${fmtEur(t0.revenue - FY2026.revenueCents)}), EBITDA ${fmtEur(t0.ebitda)} (${fmtEur(t0.ebitda - FY2026.ebitdaCents)}).` });
+  }
+  const p = plBreakdown(ytdMvUsed);
   const t = plTotals(p);
   const lm = closed[closed.length - 1];
   const lmt = lm ? plTotals(plBreakdown(lm.data.byAccount ?? {})) : null;
   blocks.push({
     kind: 'kpis',
     items: [
-      { label: `Revenue (${periodLabel})`, value: fmtEur(t.revenue), hint: `${int(w.snapshots.filter((s) => s.kind === 'month' && s.period.startsWith(d.slice(0, 4))).reduce((a, s) => a + s.data.unitsWholesale, 0) + w.models.reduce((a, m) => a + m.wholesaleMtd, 0))} cars invoiced to dealers` },
+      { label: `Revenue (${periodLabel})`, value: fmtEur(t.revenue), hint: !useYtd ? 'estimate' : `${int(w.snapshots.filter((s) => s.kind === 'month' && s.period.startsWith(d.slice(0, 4))).reduce((a, s) => a + s.data.unitsWholesale, 0) + w.models.reduce((a, m) => a + m.wholesaleMtd, 0))} cars invoiced to dealers` },
       { label: 'Operating profit (EBIT)', value: fmtEur(t.ebit), hint: `margin ${pct(t.ebit / Math.max(1, t.revenue))}`, tone: tone(t.ebit < 0) },
       { label: 'Net income', value: fmtEur(t.net), tone: tone(t.net < 0) },
       ...(lm && lmt ? [{ label: `Last month (${mLabel(lm.period)}) EBIT`, value: fmtEur(lmt.ebit), hint: `revenue ${fmtEur(lmt.revenue)}`, tone: tone(lmt.ebit < 0) } as const] : []),
@@ -287,10 +291,10 @@ function buildPnl({ w }: Ctx): Built {
   }
   const top = [...cats].sort((a, b) => b.amount - a.amount)[0];
   findings.push({ text: `Largest cost: ${top.label.toLowerCase()} — ${pct(top.amount / Math.max(1, t.revenue), 0)} of revenue.` });
-  if (p.interest > 0) findings.push({ text: `Interest and financing fees cost ${fmtEur(p.interest)} so far this year (${pct(p.interest / Math.max(1, t.revenue))} of revenue) — it is the price of the debt, independent of operations.` });
+  if (p.interest > 0) findings.push({ text: `Interest and financing fees cost ${fmtEur(p.interest)} ${useYtd ? 'so far this year' : 'this year (forecast)'} (${pct(p.interest / Math.max(1, t.revenue))} of revenue) — it is the price of the debt, independent of operations.` });
   const oneOffs = p.restructuring + p.co2 + p.recalls;
-  if (oneOffs > mEur(5)) findings.push({ text: `One-offs (restructuring, CO₂, recalls) cost ${fmtEur(oneOffs)} this year.`, tone: 'warning' });
-  if (p.storage > mEur(2)) findings.push({ text: `Storing unsold cars has cost ${fmtEur(p.storage)} — a sign of overproduction.`, tone: 'warning' });
+  if (oneOffs > mEur(5)) findings.push({ text: `One-offs (restructuring, CO₂ penalty, recalls) cost ${fmtEur(oneOffs)} this year${useYtd ? '' : ' (forecast)'}.`, tone: 'warning' });
+  if (p.storage > mEur(2)) findings.push({ text: `Storing unsold cars ${useYtd ? 'has cost' : 'will cost'} ${fmtEur(p.storage)} — a sign of overproduction.`, tone: 'warning' });
   if (FY2026.revenueCents) findings.push({ text: `For comparison: FY2026 operating margin was ${pct(FY2026.ebitCents / FY2026.revenueCents)}.` });
   blocks.push({ kind: 'bullets', title: 'What the numbers say', items: findings });
   return { title: 'Profit & loss: where the money goes', summary: `${periodLabel}: revenue ${fmtEur(t.revenue)}, operating profit ${fmtEur(t.ebit)} (${pct(t.ebit / Math.max(1, t.revenue))}), net income ${fmtEur(t.net)}. Largest cost: ${top.label.toLowerCase()}.`, blocks };

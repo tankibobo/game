@@ -21,7 +21,7 @@ import { fmtEur } from '../../shared/money';
 import { holdBoardMeeting, monthlyConfidence, upcomingMeeting } from './board';
 import { finalReview } from './mandate';
 import { runPartnerDeals } from './partners';
-import { competitorDynamics, updateSharePrice } from './market';
+import { competitorDynamics, ourSegmentShares, updateSharePrice } from './market';
 import { closeMonth } from './close';
 import { processCommitments } from './commitments';
 import { runEvents, scheduledDevelopments, upkeepIssues } from './events';
@@ -100,7 +100,7 @@ export function advanceDay(w: World, hooks: TickHooks = {}): DayResult {
     monthlyConfidence(w);
     updateSharePrice(w);
     const snap = w.snapshots[w.snapshots.length - 1];
-    if (snap) Object.assign(snap.data, { sharePriceCents: w.meta.sharePriceCents, boardConfidence: w.meta.boardConfidence });
+    if (snap) Object.assign(snap.data, { sharePriceCents: w.meta.sharePriceCents, boardConfidence: w.meta.boardConfidence, segmentShares: ourSegmentShares(w) });
     res.closedMonth = monthKey(d);
     w.meta.forecastStale = 1;
   }

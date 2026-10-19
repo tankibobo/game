@@ -147,7 +147,7 @@ function Products({ d }: { d: any }) {
         </Decision>
       </Card>
       <Card>
-        <Decision title="Set the always-on marketing budget" who="You — immediate" hint="Monthly brand and product marketing across all models. More spending lifts demand everywhere, with diminishing returns. Whether it pays: ask Camille Garnier, or open the Marketing performance report.">
+        <Decision title="Set the always-on marketing budget" who="You — immediate" hint="Monthly brand and product marketing across all models. More spending lifts demand everywhere, with diminishing returns. Whether it pays: ask the sales & marketing director, or open the Marketing performance report.">
           <div className="form-grid">
             <label className="field">€ million per month<input type="number" step={1} value={mkt} onChange={(e) => setMkt(e.target.value)} placeholder={String(Math.round(d.marketingMonthlyCents / 1e8))} /></label>
             <div><button className="btn primary" disabled={!(num(mkt) >= 0)} onClick={() => propose('set_marketing_budget', { monthlyCents: Math.round(num(mkt) * 1e8), reason: 'Marketing budget decision' })}>Preview…</button></div>

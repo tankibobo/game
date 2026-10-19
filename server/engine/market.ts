@@ -24,20 +24,33 @@ function ourShare(w: World, segId: string, d: SimDate): number {
   return segmentShares(w, segId, d).filter((r) => r.kind === 'asterion').reduce((a, r) => a + r.share, 0);
 }
 
-/** Month end: move the share price toward what results justify. */
+/** Asterion's share of each segment it sells in (for the monthly market report). */
+export function ourSegmentShares(w: World): Record<string, number> {
+  const d = w.meta.currentDate;
+  const segs = new Set(w.models.filter((m) => m.status === 'in_production').map((m) => m.segmentId));
+  return Object.fromEntries([...segs].map((sg) => [sg, Math.round(ourShare(w, sg, d) * 10000) / 10000]));
+}
+
+/**
+ * Month end: move the share price toward what results justify. The market
+ * already priced in the situation the CEO inherited, so the price reacts to
+ * how the outlook changes from there: forecast margin, liquidity, the Eon
+ * and the board's confidence.
+ */
 export function updateSharePrice(w: World): void {
   const s = st(w, 'share_price');
-  if (s.data.anchor === undefined) s.data.anchor = w.meta.sharePriceCents;
-  const anchor = Number(s.data.anchor);
   const fc = w.meta.lastForecastSummary;
   const rev = Math.max(1, fc?.fyRevenueCents ?? 1);
   const margin = fc ? fc.fyEbitCents / rev : 0.02;
-  let target = anchor * clamp(1 + 9 * (margin - 0.025), 0.35, 1.9);
   const low = fc?.minLiquidity12mCents ?? 0;
-  if (low < 40_000_000_000) target *= 0.8;
-  target *= 0.85 + 0.3 * (w.meta.boardConfidence / 100);
-  if (fc?.eonSopForecast && diffDays(fc.eonSopForecast, w.meta.boardPlan.eonSopDate) <= 60) target *= 1.06;
-  else if (!fc?.eonSopForecast) target *= 0.92;
+  const eonState = fc?.eonSopForecast && diffDays(fc.eonSopForecast, w.meta.boardPlan.eonSopDate) <= 60 ? 1.05 : !fc?.eonSopForecast ? 0.95 : 1;
+  if (s.data.anchor === undefined) Object.assign(s.data, { anchor: w.meta.sharePriceCents, baseMargin: margin, baseLowOk: low >= 40_000_000_000 ? 1 : 0, baseConf: w.meta.boardConfidence, baseEon: eonState });
+  const anchor = Number(s.data.anchor);
+  let target = anchor * clamp(1 + 6 * (margin - Number(s.data.baseMargin)), 0.4, 1.9);
+  if (low < 40_000_000_000 && Number(s.data.baseLowOk)) target *= 0.85;
+  else if (low >= 40_000_000_000 && !Number(s.data.baseLowOk)) target *= 1.1;
+  target *= 1 + 0.004 * (w.meta.boardConfidence - Number(s.data.baseConf));
+  target *= eonState / Number(s.data.baseEon);
   const rng = rngFor(w);
   const noise = 1 + 0.035 * rng.n(w.meta.currentDate, 'share');
   const before = w.meta.sharePriceCents;
@@ -45,7 +58,8 @@ export function updateSharePrice(w: World): void {
   w.meta.sharePriceCents = after;
   const chg = after / before - 1;
   if (Math.abs(chg) >= 0.08) {
-    const why = margin < 0 ? 'losses in the forecast' : low < 40_000_000_000 ? 'liquidity worries' : chg > 0 ? 'better results and outlook' : 'a weaker outlook';
+    const dm = margin - Number(s.data.baseMargin);
+    const why = chg > 0 ? (dm > 0.005 ? 'a better profit outlook' : eonState > 1 ? 'the Eon being on track' : 'a steadier outlook') : low < 40_000_000_000 ? 'liquidity worries' : dm < -0.005 ? 'a weaker profit outlook' : eonState < 1 ? 'doubts about the Eon' : 'a weaker outlook';
     emit(w, { type: 'share_price_move', category: 'market', severity: chg < 0 ? 'warning' : 'notice', title: `Asterion shares ${chg > 0 ? 'jump' : 'fall'} ${Math.abs(chg * 100).toFixed(0)}% this month`, description: `€${(before / 100).toFixed(2)} → €${(after / 100).toFixed(2)}. Analysts point to ${why}. A rights issue would now be priced off €${(after / 100).toFixed(2)}.`, causeKind: 'causal', cause: { text: 'Monthly market reaction to results and outlook.', refs: [] } });
   }
 }

@@ -35,6 +35,10 @@ export function runScenario(w: World, months: number, demandFactor: number, key:
   let maxLev = 0;
   const projectDates: Record<string, SimDate | null> = {};
   for (const p of f.projects) projectDates[p.id] = p.status === 'completed' ? p.completedDate : null;
+  const fyAcc: Record<string, number> = {};
+  const addAcc = (m: Record<string, number> | undefined) => {
+    for (const [k, v] of Object.entries(m ?? {})) fyAcc[k] = (fyAcc[k] ?? 0) + v;
+  };
   let guard = 0;
   while (f.meta.status === 'active' && monthKey(f.meta.currentDate) <= endMonth && guard++ < 1200) {
     const r = advanceDay(f);
@@ -50,6 +54,7 @@ export function runScenario(w: World, months: number, demandFactor: number, key:
     for (const p of f.projects) if (p.status === 'completed' && !projectDates[p.id]) projectDates[p.id] = p.completedDate;
     if (r.closedMonth) {
       const s = f.snapshots.find((x) => x.period === r.closedMonth)!;
+      if (r.closedMonth.startsWith(String(startYear)) && !w.snapshots.some((a) => a.kind === 'month' && a.period === r.closedMonth)) addAcc(s.data.byAccount);
       const lev = netLeverage(f);
       maxLev = Math.max(maxLev, lev);
       out.push({ month: r.closedMonth, revenueCents: s.data.revenueCents, ebitdaCents: s.data.ebitdaCents, ebitCents: s.data.ebitCents, netIncomeCents: s.data.netIncomeCents, cashCents: cash(f), liquidityCents: liq, debtCents: grossDebt(f), netLeverage: Math.round(lev * 100) / 100, production: s.data.unitsProduced, retail: s.data.unitsRetail });
@@ -60,6 +65,7 @@ export function runScenario(w: World, months: number, demandFactor: number, key:
   const fcFy = out.filter((m) => m.month.startsWith(String(startYear)) && !actualFy.some((a) => a.period === m.month));
   const fyEbit = actualFy.reduce((a, s) => a + s.data.ebitCents, 0) + fcFy.reduce((a, m) => a + m.ebitCents, 0);
   const fyRev = actualFy.reduce((a, s) => a + s.data.revenueCents, 0) + fcFy.reduce((a, m) => a + m.revenueCents, 0);
+  for (const a of actualFy) addAcc(a.data.byAccount);
   const summary: ForecastSummary = {
     createdDate: w.meta.currentDate,
     fyEbitCents: fyEbit,
@@ -72,6 +78,7 @@ export function runScenario(w: World, months: number, demandFactor: number, key:
     eonSopConditional: projectDates['PRJ-EON'] ? projectDates['PRJ-EON'] : conditionalSop(w),
     co2PenaltyFyCents: co2EstimateFy(f, startYear),
     maxLeverage: Math.round(maxLev * 100) / 100,
+    fyByAccount: fyAcc,
   };
   return { key, label, assumptions, months: out, summary, projectDates };
 }

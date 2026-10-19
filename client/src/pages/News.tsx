@@ -10,7 +10,7 @@ const monthName = (m: string) => `${MONTHS[Number(m.slice(5, 7)) - 1]} ${m.slice
 
 function Article({ a, lead }: { a: any; lead?: boolean }) {
   return (
-    <article className={`news-item ${lead ? 'lead' : ''} sev-${a.severity}`}>
+    <article className={`news-item ${lead ? 'news-lead' : ''} news-${a.severity}`}>
       <div className="tiny muted">{fmtDate(a.date)}</div>
       <h3 className="news-headline">{a.headline}</h3>
       <p className="small" style={{ margin: '2px 0 0' }}>{a.lede}</p>
@@ -67,7 +67,7 @@ export function News() {
         </div>
         <div className="stack">
           <Card title="Asterion shares" sub={`Now €${(d.sharePriceCents / 100).toFixed(2)}. Moves with results, liquidity, the Eon and the board’s confidence; a rights issue is priced off it.`}>
-            {prices.length > 1 ? <LineSeriesChart data={prices} x="month" series={series} unit="€" /> : <div className="small muted">The price history starts at the first month end.</div>}
+            {prices.length > 1 ? <LineSeriesChart data={prices} x="month" series={series} unit="€" fitY /> : <div className="small muted">The price history starts at the first month end.</div>}
           </Card>
           <Card title="Our share of each segment" flush>
             <table>

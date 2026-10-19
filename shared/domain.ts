@@ -167,6 +167,8 @@ export interface ForecastSummary {
   eonSopConditional: SimDate | null;
   co2PenaltyFyCents: Cents;
   maxLeverage: number;
+  /** Full-year P&L by account: closed months plus the forecast for the rest of the year. */
+  fyByAccount?: Record<string, Cents>;
 }
 
 // ---------------------------------------------------------------- market
@@ -982,6 +984,8 @@ export interface SnapshotData {
   headcount: number;
   sharePriceCents?: Cents;
   boardConfidence?: number;
+  /** Asterion's share of each segment it sells in, at month end. */
+  segmentShares?: Record<string, number>;
   /** The month's P&L movements by account (debit-positive); absent for pre-game history. */
   byAccount?: Record<string, Cents>;
   /** Per-model volumes and prices for the month; absent for pre-game history. */

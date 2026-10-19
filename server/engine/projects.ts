@@ -337,11 +337,13 @@ export function applyProjectEffects(w: World, effects: ProjectEffect[]): string[
         const f = byId(w.factories, e.factoryId);
         if (f) {
           const before = steadyStateCrew(w, f);
+          const per0 = f.crewPerDailyUnit;
           f.crewPerDailyUnit = Math.round(f.crewPerDailyUnit * (1 + e.pct) * 100) / 100;
           const after = steadyStateCrew(w, f);
           const dep = byId(w.departments, f.departmentId);
           const surplus = dep ? dep.headcount - Math.round(after / (1 - f.absenteeismPct / 100)) : 0;
-          out.push(`${f.name} needs ${n0(before - after)} fewer people at the planned rate (${n0(before)} → ${n0(after)} on the lines).${surplus > 50 && dep ? ` It now has about ${n0(surplus)} more people than it needs — ≈${em(Math.round(surplus * dep.annualCostPerHeadCents * w.meta.wageIndex))} a year of payroll until headcount comes down.` : ''}`);
+          const crewLine = before - after >= 1 ? `${f.name} needs ${n0(before - after)} fewer people at the planned rate (${n0(before)} → ${n0(after)} on the lines).` : `${f.name} needs ${Math.round(-e.pct * 100)}% fewer people per car built (${per0.toFixed(2)} → ${f.crewPerDailyUnit.toFixed(2)} per car a day); its lines are barely running now, so the saving shows when output rises.`;
+          out.push(`${crewLine}${surplus > 50 && dep ? ` It now has about ${n0(surplus)} more people than it needs — ≈${em(Math.round(surplus * dep.annualCostPerHeadCents * w.meta.wageIndex))} a year of payroll until headcount comes down.` : ''}`);
         }
         break;
       }
@@ -392,9 +394,10 @@ export function applyProjectEffects(w: World, effects: ProjectEffect[]): string[
       }
       case 'marketing_efficiency': {
         const before = demandOf(w);
+        const eff0 = w.meta.marketingEfficiency;
         w.meta.marketingEfficiency = Math.round(w.meta.marketingEfficiency * (1 + e.pct) * 100) / 100;
         const after = demandOf(w);
-        out.push(`Each marketing euro now works ${Math.round(e.pct * 100)}% harder: at today’s budget demand ${pctChange(before, after)} (≈${n0(after - before)} cars a month).`);
+        out.push(`Each marketing euro now works ${Math.round(e.pct * 100)}% harder (efficiency ${eff0.toFixed(2)} → ${w.meta.marketingEfficiency.toFixed(2)}): at today’s budget demand ${pctChange(before, after)} (≈${n0(after - before)} cars a month).`);
         break;
       }
       case 'morale': {

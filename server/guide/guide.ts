@@ -40,19 +40,28 @@ const PAGES = Object.keys(PAGE_LABEL) as GuidePage[];
 export const ADVICE_RE = /\b(should i|what should|what (?:do|can) i do|what now|next step|best (?:way|strategy|move|option|choice)|is it (?:a )?good idea|recommend|advi[cs]e|which is better|what would you do|help me|win|winning|losing|lose|keep getting fired|fired|dismiss|struggl|stuck|priorit|counsel|tips?|strategy|why is the board|board (?:is )?(?:unhappy|angry)|confidence (?:is )?(?:low|dropping|falling))/i;
 
 /** "Why…?" questions answered from the company's own figures: which report explains it, and who to ask in the game. */
-const INSIGHTS: { re: RegExp; report: string; ask: string; who: string; page: GuidePage }[] = [
-  { re: /losing money|lose money|\blos(s|ses)\b|unprofitable|not profitable|where (does|did) (the|my|our) money|money go|break.?even|\bmargins?\b|\bcosts?\b|profit/i, report: 'pnl', ask: 'CHR-HOLM', who: 'Henrik Holm (CFO)', page: 'finance' },
-  { re: /marketing|campaign|advertis/i, report: 'marketing', ask: 'CHR-GARNIER', who: 'Camille Garnier (sales & marketing)', page: 'products' },
-  { re: /\bsales\b|selling|sell (more|less|enough)|demand|market share|competitor/i, report: 'sales', ask: 'CHR-GARNIER', who: 'Camille Garnier (sales & marketing)', page: 'products' },
-  { re: /\bcash\b|liquidity|run out of money|insolv|covenant/i, report: 'cash', ask: 'CHR-HOLM', who: 'Henrik Holm (CFO)', page: 'finance' },
-  { re: /production|stock|inventory|\bplants?\b|factor(y|ies)|output/i, report: 'production', ask: 'CHR-MARCHETTI', who: 'the COO, Marchetti', page: 'operations' },
-  { re: /workforce|morale|strike|union|absentee/i, report: 'workforce', ask: 'CHR-OKAFOR', who: 'the HR director, Okafor', page: 'company' },
-  { re: /supplier|battery|supply|shortage/i, report: 'supply', ask: 'CHR-LINDQVIST', who: 'the purchasing director, Lindqvist', page: 'operations' },
+const INSIGHTS: { re: RegExp; report: string; ask: string; page: GuidePage }[] = [
+  { re: /losing money|lose money|\blos(s|ses)\b|unprofitable|not profitable|where (does|did) (the|my|our) money|money go|break.?even|\bmargins?\b|\bcosts?\b|profit/i, report: 'pnl', ask: 'CHR-HOLM', page: 'finance' },
+  { re: /marketing|campaign|advertis/i, report: 'marketing', ask: 'CHR-GARNIER', page: 'products' },
+  { re: /\bsales\b|selling|sell (more|less|enough)|demand|market share|competitor/i, report: 'sales', ask: 'CHR-GARNIER', page: 'products' },
+  { re: /\bcash\b|liquidity|run out of money|insolv|covenant/i, report: 'cash', ask: 'CHR-HOLM', page: 'finance' },
+  { re: /production|stock|inventory|\bplants?\b|factor(y|ies)|output/i, report: 'production', ask: 'CHR-MARCHETTI', page: 'operations' },
+  { re: /workforce|morale|strike|union|absentee/i, report: 'workforce', ask: 'CHR-OKAFOR', page: 'company' },
+  { re: /supplier|battery|supply|shortage/i, report: 'supply', ask: 'CHR-LINDQVIST', page: 'operations' },
 ];
 const WHY_RE = /\b(why|how come|what'?s wrong|what is wrong|explain|understand|decode|break ?down|where does|what happened to|is .* working|does .* work|useful)\b/i;
 
 function insightFor(question: string) {
   return INSIGHTS.find((x) => x.re.test(question)) ?? null;
+}
+
+function whoIs(db: DB | null, id: string): string {
+  try {
+    const c = db ? loadWorld(db).characters.find((x) => x.id === id) : null;
+    return c ? `${c.name} (${c.title})` : 'the executive in charge';
+  } catch {
+    return 'the executive in charge';
+  }
 }
 
 function safeReport(db: DB | null, key: string): Report | null {
@@ -65,12 +74,12 @@ function safeReport(db: DB | null, key: string): Report | null {
 }
 
 /** A coach's answer to a "why…?" question, from the report that explains it. */
-function fromReport(r: Report, ins: NonNullable<ReturnType<typeof insightFor>>, question: string): GuideAnswer {
+function fromReport(r: Report, ins: NonNullable<ReturnType<typeof insightFor>>, question: string, who: string): GuideAnswer {
   const findings = r.blocks.flatMap((b) => (b.kind === 'bullets' ? b.items : [])).filter((f) => !r.summary.includes(f.text.slice(4, 40))).sort((a, b) => (b.tone === 'critical' ? 2 : b.tone === 'warning' ? 1 : 0) - (a.tone === 'critical' ? 2 : a.tone === 'warning' ? 1 : 0));
   return {
     answer: `${r.summary}${findings.length ? ` What stands out: ${findings.slice(0, 3).map((f) => f.text.replace(/\.$/, '')).join('; ')}.` : ''}`,
     steps: [],
-    notes: [`Open ${PAGE_LABEL[ins.page]} for the full “${r.title}”, or ask ${ins.who} with “Ask someone” — they will send you the report and their view.`],
+    notes: [`Open ${PAGE_LABEL[ins.page]} for the full “${r.title}”, or ask ${who} with “Ask someone” — they will send you the report and their view.`],
     pages: [{ page: ins.page, label: PAGE_LABEL[ins.page] }],
     topics: [],
     source: 'manual',
@@ -234,7 +243,7 @@ export async function askGuide(db: DB | null, llm: LlmConfig, question: string, 
   const ins = insightFor(q);
   const wantsWhy = !howTo && !!ins && (WHY_RE.test(q) || !retrieve(q).length);
   const insightReport = ins ? safeReport(db, ins.report) : null;
-  const manualAnswer = wantsWhy && insightReport ? fromReport(insightReport, ins!, q) : wantsAdvice && coach ? fromCoach(coach) : fromManual(q);
+  const manualAnswer = wantsWhy && insightReport ? fromReport(insightReport, ins!, q, whoIs(db, ins!.ask)) : wantsAdvice && coach ? fromCoach(coach) : fromManual(q);
   if (!llm.provider.available) return manualAnswer;
   const t0 = Date.now();
   const figures = db ? [safeReport(db, 'pnl'), safeReport(db, 'unit_economics'), insightReport && !['pnl', 'unit_economics'].includes(insightReport.key) ? insightReport : null].filter(Boolean).map((r) => reportToText(r!, 1800)).join('\n\n') : '';

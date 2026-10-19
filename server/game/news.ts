@@ -8,6 +8,8 @@ import type { DB } from '../db/connection';
 import { loadWorld, rowToEvent } from '../db/repo';
 import { segmentShares } from '../engine/demand';
 
+const MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
 export type NewsSection = 'asterion' | 'industry' | 'markets';
 
 export interface NewsItem {
@@ -78,6 +80,58 @@ export function newsView(db: DB, months = 4) {
     const { headline, lede } = press(e);
     items.push({ id: e.id, date: e.date, section: sectionOf(e), headline, lede, impact: impactLines(e), severity: e.severity, type: e.type });
   }
+  // Monthly results: what the paper writes about Asterion after each month closes.
+  const eur = (c: number) => `€${(c / 1e8).toFixed(0)}m`;
+  const closed = w.snapshots.filter((x) => x.kind === 'month' && x.period >= fromMonth.slice(0, 7) && x.data.byAccount);
+  for (const [i, snap] of closed.entries()) {
+    const prev = i > 0 ? closed[i - 1] : w.snapshots.find((x) => x.kind === 'month' && x.period < snap.period && x.period.slice(0, 4) === snap.period.slice(0, 4));
+    const x = snap.data;
+    const models = Object.entries(x.byModel ?? {}).filter(([, v]) => v.wholesale > 0).map(([id, v]) => `${w.models.find((m) => m.id === id)?.name.replace('Asterion ', '') ?? id} ${v.wholesale.toLocaleString('en-GB')}`);
+    const trend = prev ? (x.unitsWholesale > prev.data.unitsWholesale * 1.03 ? 'up' : x.unitsWholesale < prev.data.unitsWholesale * 0.97 ? 'down' : 'flat') : null;
+    items.push({
+      id: `RES-${snap.period}`,
+      date: snap.date,
+      section: 'asterion',
+      headline: `Asterion ${x.ebitCents < 0 ? 'loses' : 'earns'} ${eur(Math.abs(x.ebitCents))} in ${MONTH[Number(snap.period.slice(5, 7)) - 1]} on ${x.unitsWholesale.toLocaleString('en-GB')} cars`,
+      lede: `Revenue ${eur(x.revenueCents)}, operating result ${eur(x.ebitCents)}${prev ? ` (${eur(prev.data.ebitCents)} the month before)` : ''}; ${x.unitsProduced.toLocaleString('en-GB')} cars built. ${models.length ? `Sales to dealers: ${models.join(', ')}.` : ''}`,
+      impact: trend ? [`Volumes ${trend} on the month; cash ${eur(x.cashCents)}, liquidity ${eur(x.liquidityCents)}.`] : [`Cash ${eur(x.cashCents)}, liquidity ${eur(x.liquidityCents)}.`],
+      severity: x.ebitCents < 0 ? 'notice' : 'info',
+      type: 'monthly_results',
+    });
+    const sh = x.segmentShares ?? {};
+    const psh = prev?.data.segmentShares ?? {};
+    const segLines = Object.entries(sh).map(([sg, v]) => {
+      const name = w.segments.find((y) => y.id === sg)?.name ?? sg;
+      const before = psh[sg];
+      return { name, v, delta: before === undefined ? null : v - before };
+    });
+    if (segLines.length) {
+      const big = [...segLines].filter((l) => l.delta !== null).sort((a, b) => Math.abs(b.delta!) - Math.abs(a.delta!))[0];
+      items.push({
+        id: `MKT-${snap.period}`,
+        date: snap.date,
+        section: 'industry',
+        headline: big && Math.abs(big.delta!) >= 0.001 ? `Asterion ${big.delta! > 0 ? 'gains' : 'loses'} ground in the ${big.name} market` : `Market shares steady in ${MONTH[Number(snap.period.slice(5, 7)) - 1]}`,
+        lede: segLines.map((l) => `${l.name}: our share ${(l.v * 100).toFixed(1)}%${l.delta !== null ? ` (${l.delta >= 0 ? '+' : ''}${(l.delta * 100).toFixed(1)} pt)` : ''}`).join('; ') + '.',
+        impact: big && Math.abs(big.delta!) >= 0.001 ? [`${big.delta! > 0 ? 'Gaining' : 'Losing'} ${Math.abs(big.delta! * 100).toFixed(1)} points of a segment moves thousands of cars a year — prices, marketing, campaigns and competitors’ moves all play a part.`] : [],
+        severity: 'info',
+        type: 'market_share',
+      });
+    }
+  }
+  // The economy, as of today, in the current edition.
+  const m = w.macro;
+  items.push({
+    id: `MACRO-${today.slice(0, 7)}`,
+    date: today,
+    section: 'markets',
+    headline: `Economy: consumer confidence ${m.consumerConfidence.toFixed(0)}, ECB rate ${m.ecbRatePct.toFixed(2)}%`,
+    lede: `GDP growth ${m.gdpGrowthPct.toFixed(1)}%, energy index ${m.energyIndex.toFixed(2)}, battery cost index ${m.batteryCostIndex.toFixed(2)}, credit spreads ${Math.round(m.creditSpreadBps)} bp.${m.shocks.length ? ` Under way: ${m.shocks.map((x) => `${x.label} (until ${x.until})`).join('; ')}.` : ''}`,
+    impact: [`${m.consumerConfidence < 97 ? 'Weak confidence holds back car buying.' : m.consumerConfidence > 103 ? 'Strong confidence supports car buying.' : 'Car demand follows its normal course.'} ${m.creditSpreadBps > 450 ? 'Borrowing is expensive for companies rated like Asterion.' : 'Credit markets are open.'}`],
+    severity: 'info',
+    type: 'macro',
+  });
+  items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   const rank = { critical: 3, warning: 2, notice: 1, info: 0 } as const;
   const editions = [...new Set(items.map((i) => i.date.slice(0, 7)))].sort().reverse().map((month) => {
     const xs = items.filter((i) => i.date.startsWith(month));

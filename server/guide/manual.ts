@@ -305,7 +305,7 @@ export const MANUAL: ManualTopic[] = [
     steps: [
       'Open Decisions → Products & pricing → “Launch a marketing campaign”: choose the model, the spend (€1–40m) and the weeks, then “Preview…” — it estimates the extra cars and whether it pays back.',
       'To change the always-on budget: Decisions → Products & pricing → “Set the always-on marketing budget”.',
-      'To see whether it works: Products & marketing → Marketing & campaigns, or People & divisions → Divisions → Sales & marketing, or ask Camille Garnier.',
+      'To see whether it works: Products & marketing → Marketing & campaigns, or People & divisions → Divisions → Sales & marketing, or ask the sales & marketing director (Julien Garnier).',
     ],
     pages: ['decisions', 'products'],
     notes: ['Campaigns are best used to clear stock or support a launch; a campaign for a model that is sold out mostly creates waiting lists.', 'A Digital CRM or digital-marketing project makes every marketing euro work harder.'],
@@ -527,7 +527,7 @@ export const MANUAL: ManualTopic[] = [
       'Open Finance → Where the money goes.',
       'Read the waterfall top to bottom: which costs eat the revenue.',
       'Read the unit economics: a model with a negative contribution loses money on every car; fixed plant costs fall per car as volume rises.',
-      'Ask the CFO (link on the page or “Ask someone”) for the report and his view.',
+      'Ask the CFO (link on the page or “Ask someone”) for the report and the CFO’s view.',
     ],
     pages: ['finance'],
     notes: ['Typical causes: plants running far below capacity (fixed costs spread over too few cars), prices below competitors’ (lost volume) or too low for the materials, idle crews, heavy interest.'],
