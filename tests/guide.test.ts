@@ -36,18 +36,20 @@ describe('in-game guide', () => {
     ['How do I advance time?', 'time'],
     ['How do I cut jobs at Lyon?', 'cut-jobs'],
     ['where are the proposals my team made', 'drafts'],
+    ['How do I win the game?', 'how-to-win'],
+    ['How do I start another scenario on hard difficulty?', 'scenarios'],
+    ['How do I extend the credit line?', 'rcf'],
   ])('finds the right manual entry for “%s”', (q, id) => {
     expect(retrieve(q)[0]?.topic.id).toBe(id);
   });
 
-  it('answers step by step without Claude, and never gives advice', async () => {
+  it('answers step by step without Claude', async () => {
     const a = await askGuide(null, none, 'How do I hire more people?', 'dashboard');
     expect(a.source).toBe('manual');
     expect(a.steps.join(' ')).toMatch(/Decisions → Take a decision → People & communication → “Hire staff”/);
     expect(a.pages.map((p) => p.page)).toContain('decisions');
-    const advice = await askGuide(null, none, 'Should I cut jobs at Lyon?', 'dashboard');
-    expect(advice.answer).toMatch(/only explain how things work, not what you should decide/);
-    expect(advice.topics[0].id).toBe('cut-jobs');
+    const noGame = await askGuide(null, none, 'Should I cut jobs at Lyon?', 'dashboard');
+    expect(noGame.topics[0].id).toBe('cut-jobs');
     const unknown = await askGuide(null, none, 'qwertyuiop zxcv', null);
     expect(unknown.answer).toMatch(/could not find that in the manual/);
   });
@@ -65,12 +67,25 @@ describe('in-game guide', () => {
     const sent = p.calls[0].messages[0].content;
     expect(sent).toContain('[hire] Hire more people');
     expect(sent).toMatch(/a decision submitted today is voted on 2027-01-28/);
-    expect(p.calls[0].system).toMatch(/Never give strategic advice/);
+    expect(p.calls[0].system).toMatch(/COACH ANALYSIS/);
+    expect(sent).toContain('COACH ANALYSIS:');
     const b = await askGuide(db, withProvider(p), 'How do I hire more people?', 'company');
     expect(b.source).toBe('manual');
     expect(b.topics[0].id).toBe('hire');
     const logged = db.prepare("SELECT status FROM llm_calls WHERE purpose = 'guide'").all() as { status: string }[];
     expect(logged.map((x) => x.status)).toEqual(['ok', 'invalid_output']);
+  });
+
+  it('gives advice from the Coach when asked what to do', async () => {
+    const { db } = newGameDb();
+    const a = await askGuide(db, none, 'What should I do first? The board keeps firing me.', 'dashboard');
+    expect(a.answer).toMatch(/Your top priorities: 1\)/);
+    expect(a.answer).toMatch(/Secure battery supply for the Eon/);
+    expect(a.actions?.length).toBeGreaterThan(0);
+    expect(a.related.map((r) => r.id)).toContain('how-to-win');
+    // A how-to question still gets the manual, even when it mentions winning.
+    const h = await askGuide(db, none, 'How do I win?', 'dashboard');
+    expect(h.topics[0].id).toBe('how-to-win');
   });
 
   it('only names buttons, tabs and cards that exist in the interface', () => {

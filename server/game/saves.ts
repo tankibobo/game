@@ -4,6 +4,7 @@
  * means the slot is always current. "Save as" snapshots the active slot to a
  * new file with VACUUM INTO; "load" switches the active slot.
  */
+import { scenarioOf } from '../scenario/scenarios';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { openDb, type DB } from '../db/connection';
@@ -17,6 +18,9 @@ export interface SlotInfo {
   currentDate: string | null;
   status: string | null;
   companyName: string | null;
+  scenario: string | null;
+  difficulty: string | null;
+  seed: number | null;
   active: boolean;
 }
 
@@ -122,14 +126,14 @@ export class SaveManager {
       const m = f.match(/^([a-z0-9-]+)\.sqlite$/);
       if (!m) continue;
       const id = m[1];
-      let meta: { current_date?: string; status?: string; company_name?: string } = {};
+      let meta: { current_date?: string; status?: string; company_name?: string; scenario_key?: string; difficulty?: string; seed?: number } = {};
       try {
-        meta = (this.db(id).prepare('SELECT "current_date", status, company_name FROM game_meta LIMIT 1').get() as typeof meta) ?? {};
+        meta = (this.db(id).prepare('SELECT "current_date", status, company_name, scenario_key, difficulty, seed FROM game_meta LIMIT 1').get() as typeof meta) ?? {};
       } catch {
         /* unreadable save */
       }
       const st = statSync(this.fileFor(id));
-      out.push({ id, name: ix.names[id]?.name ?? id, file: this.fileFor(id), createdAt: ix.names[id]?.createdAt ?? st.birthtime.toISOString(), updatedAt: st.mtime.toISOString(), currentDate: meta.current_date ?? null, status: meta.status ?? null, companyName: meta.company_name ?? null, active: id === ix.active });
+      out.push({ id, name: ix.names[id]?.name ?? id, file: this.fileFor(id), createdAt: ix.names[id]?.createdAt ?? st.birthtime.toISOString(), updatedAt: st.mtime.toISOString(), currentDate: meta.current_date ?? null, status: meta.status ?? null, companyName: meta.company_name ?? null, scenario: meta.scenario_key ? scenarioOf(meta.scenario_key).name : null, difficulty: meta.difficulty ?? null, seed: meta.seed ?? null, active: id === ix.active });
     }
     return out.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   }

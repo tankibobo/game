@@ -9,7 +9,7 @@ import { addDays, addMonths, type SimDate } from '../../shared/dates';
 import { bps, fmtEur, mEur, mulDiv, type Cents } from '../../shared/money';
 import { bal, cash, post } from './ledger';
 import { payOrDefer } from './treasury';
-import { grossDebt, liquidity, ltm, netDebt, netLeverage } from './metrics';
+import { grossDebt, liquidity, ltm, netDebt, netLeverage, rcf, rcfBlocked } from './metrics';
 import { adjustTrust, byId, clamp, emit, inbox, nextId, type World } from './world';
 
 export const REVIEW_DAYS: Record<string, number> = {
@@ -22,6 +22,7 @@ export const REVIEW_DAYS: Record<string, number> = {
   ceo_contribution: 30,
   sale_leaseback: 45,
   covenant_waiver: 14,
+  rcf_extension: 21,
 };
 
 export const COUNTERPARTY: Record<string, { name: string; id: string | null }> = {
@@ -34,6 +35,7 @@ export const COUNTERPARTY: Record<string, { name: string; id: string | null }> =
   ceo_contribution: { name: 'CEO personal subscription (related party)', id: null },
   sale_leaseback: { name: 'Real-estate investors (HQ campus)', id: null },
   covenant_waiver: { name: 'Bank syndicate (TLA & RCF lenders)', id: 'CHR-FONTAINE' },
+  rcf_extension: { name: 'RCF lenders (Banque Continentale, agent)', id: 'CHR-FONTAINE' },
 };
 
 const RATING_SPREAD: Record<string, number> = { 'BBB-': 180, 'BB+': 240, BB: 310, 'BB-': 380, 'B+': 480, B: 600, 'B-': 750, 'CCC+': 1000 };
@@ -71,7 +73,7 @@ export function decide(w: World, f: FinancingRequest): { offer: FinancingOffer |
       const downturn = w.macro.shocks.some((s) => s.key === 'downturn' && s.until >= d);
       if (lev > 4 || (downturn && ['B+', 'B', 'B-', 'CCC+'].includes(w.meta.creditRating))) return { offer: null, reason: 'Bookbuilding failed: insufficient investor demand at an acceptable yield.' };
       const coupon = ecb + ratingSpreadBps(w) + 25 + (downturn ? 100 : 0);
-      return { offer: { amountCents: f.requestedCents, rateBps: coupon, tenorYears: f.tenorYears || 5, feesCents: bps(f.requestedCents, 120), conditions: ['Senior unsecured notes, bullet maturity', 'Change-of-control put at 101%'], validUntil: addDays(d, 5) }, reason: `Order book covered; indicative coupon ${(coupon / 100).toFixed(2)}%.` };
+      return { offer: { amountCents: f.requestedCents, rateBps: coupon, tenorYears: f.tenorYears || 5, feesCents: bps(f.requestedCents, 120), conditions: ['Senior unsecured notes, bullet maturity', 'Change-of-control put at 101%'], validUntil: addDays(d, 10) }, reason: `Order book covered; indicative coupon ${(coupon / 100).toFixed(2)}%.` };
     }
     case 'rights_issue': {
       const hal = byId(w.characters, 'CHR-HALVORSEN');
@@ -102,6 +104,14 @@ export function decide(w: World, f: FinancingRequest): { offer: FinancingOffer |
       if (w.meta.boardConfidence < 25) return { offer: null, reason: 'Lenders refused: they doubt management’s plan.' };
       const base = (byId(w.debts, 'DEBT-TLA')?.principalCents ?? 0) + (byId(w.debts, 'DEBT-RCF')?.limitCents ?? 0);
       return { offer: { amountCents: 0, rateBps: 75, tenorYears: 0, feesCents: bps(base, 50), conditions: ['Covenant tests waived for the next two quarters', 'Margin on TLA and RCF +75 bps', 'Monthly liquidity reporting to lenders'], validUntil }, reason: 'Lenders will grant a six-month waiver against a fee and margin step-up.' };
+    }
+    case 'rcf_extension': {
+      const r = rcf(w);
+      if (!r) return { offer: null, reason: 'There is no facility to extend.' };
+      if (rcfBlocked(w)) return { offer: null, reason: 'Lenders will not extend a facility while a covenant is in breach.' };
+      if (lev > 4) return { offer: null, reason: `Lenders declined: net leverage ${lev.toFixed(2)}x is too high to extend the facility on its current size.` };
+      const step = w.meta.creditRating === 'BB' || w.meta.creditRating === 'BB+' || w.meta.creditRating === 'BBB-' ? 0 : 50;
+      return { offer: { amountCents: 0, rateBps: step, tenorYears: 3, feesCents: bps(r.limitCents, 40), conditions: [`Maturity of the ${fmtEur(r.limitCents)} facility extended by three years to ${addMonths(r.maturityDate, 36)}`, step ? `Margin +${step} bps given the current rating` : 'Margin unchanged', 'Same covenants as Term Loan A'], validUntil }, reason: 'The syndicate agrees to a three-year extension.' };
     }
     default:
       return { offer: null, reason: 'Not a reviewable financing type.' };
@@ -223,6 +233,15 @@ export function executeFinancing(w: World, f: FinancingRequest): string[] {
       out.push(`Covenants waived until ${until}; fee ${fmtEur(o.feesCents)}; margin +${o.rateBps} bps on TLA and RCF.`);
       break;
     }
+    case 'rcf_extension': {
+      const r = rcf(w);
+      if (!r) break;
+      r.maturityDate = addMonths(r.maturityDate, 36);
+      r.rateBps += o.rateBps;
+      payOrDefer(w, { description: 'RCF extension fee', sourceType: 'financing', sourceId: src, cf: { category: 'financing', line: 'financing_fees' }, debits: [{ account: '7100', amountCents: o.feesCents }], counterpartyId: 'BANKS', category: 'fees' });
+      out.push(`${r.name} now matures on ${r.maturityDate}; fee ${fmtEur(o.feesCents)}${o.rateBps ? `; margin +${o.rateBps} bps` : ''}.`);
+      break;
+    }
   }
   f.status = 'executed';
   f.executedDate = d;
@@ -233,7 +252,7 @@ export function executeFinancing(w: World, f: FinancingRequest): string[] {
 
 /** Pro-forma analysis attached to financing requests and board proposals. */
 export function financingAnalysis(w: World, kind: string, amount: Cents): Record<string, number> {
-  const cashIn = ['rcf_repay', 'covenant_waiver'].includes(kind) ? 0 : amount;
+  const cashIn = ['rcf_repay', 'covenant_waiver', 'rcf_extension'].includes(kind) ? 0 : amount;
   const debtIn = ['bank_term_loan', 'bond', 'shareholder_loan', 'rcf_draw'].includes(kind) ? amount : 0;
   const ebitda = ltm(w, 'ebitdaCents');
   const nd = netDebt(w) + debtIn - cashIn;

@@ -93,9 +93,37 @@ partially updated.
 
 ## How to play
 
-New to the game? The dashboard opens with a **Getting started** card, and **? Guide** (top
-bar) answers “How do I…?” questions step by step — for example “How do I hire more people?”.
-The guide explains the interface and the rules; it never tells you what to decide.
+New to the game? The dashboard opens with a **Getting started** card. **? Guide** (top bar)
+has two tabs:
+
+- **Coach** — reads the live simulation and tells you what to fix first and why: where board
+  confidence is heading at the next meeting and which drivers push it, your mandate score,
+  and a prioritised to-do list (“Do now / Soon / When you can”). Most items carry a
+  **Preview** button that prepares the decision for you to check and confirm. The advice is
+  computed by the engine (never invented), and an automated player that simply follows it
+  wins every scenario (see *Testing*).
+- **Ask / How do I…?** — step-by-step answers from the manual (“How do I hire more
+  people?”), and advice from the Coach when you ask what to do (“What should I do first?”,
+  “Why is the board unhappy?”). With Claude available the answer is phrased by Claude from
+  the manual and the Coach's analysis.
+
+### Scenarios, difficulty and seeds — and how to win
+
+A new game (start screen, or **Saves → Start a new game**) starts from one of five
+situations: **The Turnaround** (the original), **A Steadier Start** (gentler: Voltaris
+signed, more cash — good for learning), **Cash Crunch**, **Electric Rush** and **Labour
+Crisis** (tougher). Pick a difficulty — **Relaxed** (patient board: three meetings below 12
+to dismiss you, renewal at 50/100), **Standard** (two meetings below 20, renewal at 60) or
+**Hard** (two below 25, short honeymoon, renewal at 65) — and optionally a seed (chance
+events; the same seed replays the same luck).
+
+You are hired for a **three-year mandate**. On 31 December 2029 the board scores it out of
+100 across seven objectives — board confidence (20), the Eon launch (20), the Vela under
+Euro 7 (10), refinancing the 2028 bond (15), operating profit vs budget (15), the liquidity
+buffer (10), keeping your word (10). Reach the pass mark and your contract is renewed: you
+win and may keep playing. Fall short, go insolvent, or lose the board's confidence at
+consecutive meetings and the game ends. The dashboard's **Your mandate** card shows the
+score if you were judged today.
 
 - **Time** only moves when you press **+1 day / +1 week / +1 month**. Each advance ends with
   a CEO briefing: what was built and sold, cash, what needs attention, what was carried out
@@ -139,7 +167,8 @@ The guide explains the interface and the rules; it never tells you what to decid
   compliance project if that one was never approved.
 - **Finance**: statements straight from the ledger, 3-scenario forecasts, debt & covenants,
   financing requests (bank loan, bond, rights issue, shareholder loan, sale-and-leaseback,
-  covenant waiver, personal investment, RCF).
+  covenant waiver, RCF extension, personal investment, RCF). Time pauses when an offer
+  arrives — offers expire within days.
 - **Saves**: progress is always persisted; *Save snapshot* copies the current game into a
   separate slot; load or delete slots there.
 
@@ -150,8 +179,9 @@ battery supply (Voltaris will only commit 140 packs/day); the wage agreement exp
 31 March; a €900m bond matures in Nov 2028; the board meets on 28 January.
 
 **Failure states.** *Insolvency* (≥10 days unable to pay >€25m of overdue obligations, or a
-debt payment default) and *dismissal* (board confidence below 20 at two consecutive regular
-meetings — after a formal warning). Recovery routes exist before both: RCF, bank loans,
+debt payment default), *dismissal* (board confidence below the difficulty's line at
+consecutive regular meetings — after a formal warning; any meeting above the line resets the
+count) and *non-renewal* (mandate score below the pass mark at the final review). Recovery routes exist before both: RCF, bank loans,
 equity, asset sales, covenant waivers, production cuts.
 
 **Strategies** with concrete costs and trade-offs: hybrid transition (Vela mild-hybrid),
@@ -340,7 +370,7 @@ preconditions, kind (causal / random shock / scheduled), magnitude and cooldown.
 npm test
 ```
 
-70 tests across ten suites. Mapping to the acceptance criteria:
+96 tests across eleven suites. Mapping to the acceptance criteria:
 
 | # | Criterion | Test |
 |---|---|---|
@@ -362,7 +392,18 @@ npm test
 | — | Scenario: delay Eon → forecast changes → board reacts → consistent after restart | `acceptance.test.ts` |
 | — | Board judges proposals on their merits; approved decisions are carried out (or wait with a reason); plans; endorsements; engineer conflicts | `board_flow.test.ts` |
 | — | Characters share one picture: capabilities, shared documents, company knowledge | `characters.test.ts` |
-| — | Guide finds the right how-to, never advises, only names buttons that exist in the UI | `guide.test.ts` |
+| — | Guide finds the right how-to, advises from the Coach when asked, only names buttons that exist in the UI | `guide.test.ts` |
+| — | Scenarios build balanced books; difficulty and consecutive strikes; final review renews/does not renew; every Coach action is a valid decision; RCF extension; time pauses on offers; wage-agreement renewal; Coach-following player safe for 8 months | `mandate.test.ts` |
+
+**Is the game winnable?** `scripts/dev/coach-bot.ts` plays whole mandates by doing what the
+Coach recommends (and negotiating within the ranges it gives). With the final code it wins
+every scenario on Standard (three seeds each) and on Hard, with mandate scores of 88–94;
+a passive player loses every scenario (dismissed or insolvent in 2027–28):
+
+```bash
+npx tsx scripts/dev/coach-bot.ts all standard 20270101,424242 --quiet   # follow the Coach
+npx tsx scripts/dev/coach-bot.ts all standard 20270101 --passive --quiet # do nothing
+```
 
 LLM behaviour is tested with a scripted provider (canned/malformed/failed responses) and the
 subscription provider with a fake Claude Code session (`claude_code.test.ts`: locked-down

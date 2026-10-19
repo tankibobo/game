@@ -90,7 +90,7 @@ function describeSchema(a: ActionDef): string {
     propose_budget: '{ projectId, amountCents, reason }',
     cancel_project: '{ projectId, reason }',
     address_issue: '{ issueId, optionKey }',
-    request_financing: "{ kind: 'rcf_draw'|'rcf_repay'|'bank_term_loan'|'bond'|'rights_issue'|'shareholder_loan'|'ceo_contribution'|'sale_leaseback'|'covenant_waiver', amountCents, tenorYears?, rationale }",
+    request_financing: "{ kind: 'rcf_draw'|'rcf_repay'|'bank_term_loan'|'bond'|'rights_issue'|'shareholder_loan'|'ceo_contribution'|'sale_leaseback'|'covenant_waiver'|'rcf_extension', amountCents, tenorYears?, rationale }",
     accept_financing: '{ financingId }',
     open_negotiation: '{ templateKey }',
     negotiate_contract: '{ negotiationId, terms: { termKey: number }, message }',

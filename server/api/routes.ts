@@ -9,10 +9,13 @@ import { sendMessage, startConversation, submitOffer } from '../llm/conversation
 import { LlmError, type LlmConfig } from '../llm/provider';
 import { isSimDate } from '../../shared/dates';
 import { SCENARIO_BRIEF } from '../scenario/initial';
+import { SCENARIOS, scenarioOf } from '../scenario/scenarios';
+import { DIFFICULTIES } from '../engine/difficulty';
 import { loadWorld } from '../db/repo';
 import { DOCUMENT_TYPES, recentDocuments, shareDocument } from '../game/documents';
 import { decisionsView } from '../game/decisions';
 import { MANUAL, askGuide, topicAnswer } from '../guide/guide';
+import { coachReport } from '../guide/advisor';
 
 export function buildApi(saves: SaveManager, llm: LlmConfig): express.Router {
   const r = express.Router();
@@ -54,21 +57,36 @@ export function buildApi(saves: SaveManager, llm: LlmConfig): express.Router {
     const active = saves.activeId();
     let game = null;
     if (active) {
-      const m = db().prepare('SELECT "current_date", status, terminal_reason, company_name, version FROM game_meta').get() as Record<string, unknown> | undefined;
+      const m = db().prepare('SELECT "current_date", status, terminal_reason, company_name, version, scenario_key, difficulty, seed, term_end_date, mandate FROM game_meta').get() as Record<string, unknown> | undefined;
+      if (m && typeof m.mandate === 'string') {
+        try {
+          m.mandate = JSON.parse(m.mandate);
+        } catch {
+          m.mandate = null;
+        }
+      }
       game = m ?? null;
     }
-    res.json({ activeSave: active, game, llm: llmStatus(), brief: SCENARIO_BRIEF });
+    const sc = scenarioOf((game as { scenario_key?: string } | null)?.scenario_key);
+    res.json({ activeSave: active, game, llm: llmStatus(), brief: game ? sc.brief : SCENARIO_BRIEF, scenario: game ? { key: sc.key, name: sc.name } : null });
   });
+
+  r.get('/scenarios', (_req, res) =>
+    res.json({
+      scenarios: SCENARIOS.map((x) => ({ key: x.key, name: x.name, challenge: x.challenge, tagline: x.tagline, brief: x.brief })),
+      difficulties: Object.entries(DIFFICULTIES).map(([key, d]) => ({ key, label: d.label, description: d.description, passScore: d.passScore })),
+    }),
+  );
 
   // ------------------------------------------------------------- saves
   r.get('/saves', (_req, res) => res.json({ saves: saves.list(), active: saves.activeId() }));
   r.post('/game/new', (req, res) => {
-    const b = body(z.object({ name: z.string().max(60).optional(), seed: z.number().int().optional() }), req);
+    const b = body(z.object({ name: z.string().max(60).optional(), seed: z.number().int().min(1).max(2_000_000_000).optional(), scenario: z.string().max(40).optional(), difficulty: z.enum(['relaxed', 'standard', 'hard']).optional() }), req);
     const name = b.name?.trim() || `Asterion ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
     const id = saves.newSlotId(name);
     const d = openDb(saves.fileFor(id));
     try {
-      createNewGame(d, b.seed);
+      createNewGame(d, b.seed, { scenario: b.scenario, difficulty: b.difficulty });
     } finally {
       d.close();
     }
@@ -169,6 +187,10 @@ export function buildApi(saves: SaveManager, llm: LlmConfig): express.Router {
     const a = topicAnswer(String(req.params.id));
     if (!a) throw new GameError('Unknown guide topic', 404);
     res.json(a);
+  });
+  r.get('/coach', (_req, res) => {
+    const d = db();
+    res.json(coachReport(d, loadWorld(d)));
   });
   r.post('/guide/ask', async (req, res) => {
     const b = body(z.object({ question: z.string().min(1).max(600), page: z.string().max(40).nullable().optional() }), req);

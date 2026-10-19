@@ -41,7 +41,19 @@ export type EntityType =
 
 // ---------------------------------------------------------------- meta / macro
 
-export type GameStatus = 'active' | 'insolvent' | 'dismissed';
+export type GameStatus = 'active' | 'insolvent' | 'dismissed' | 'not_renewed';
+
+export type Difficulty = 'relaxed' | 'standard' | 'hard';
+
+/** The CEO's three-year mandate: how it was judged at the end of the term. */
+export interface MandateResult {
+  date: SimDate;
+  score: number; // 0..100
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  passed: boolean;
+  passScore: number;
+  objectives: { id: string; label: string; weight: number; score: number; detail: string }[];
+}
 
 export interface BoardPlan {
   /** Eon start of production communicated to the board. */
@@ -98,6 +110,12 @@ export interface GameMeta {
   newPpeGrossCents: Cents;
   /** Capitalised development cost being amortised (programmes past SOP). */
   amortizingDevCents: Cents;
+  /** Starting scenario (see server/scenario/scenarios.ts). */
+  scenarioKey: string;
+  difficulty: Difficulty;
+  /** End of the CEO's mandate; the board's final review happens on this date. */
+  termEndDate: SimDate;
+  mandate: MandateResult | null;
   forecastStale: number;
   /** Utility penalty/bonus of Asterion's distribution network vs incumbents. */
   distributionUtility: number;
@@ -767,7 +785,8 @@ export type FinancingKind =
   | 'shareholder_loan'
   | 'ceo_contribution'
   | 'sale_leaseback'
-  | 'covenant_waiver';
+  | 'covenant_waiver'
+  | 'rcf_extension';
 
 export type FinancingStatus = 'draft' | 'under_review' | 'offered' | 'accepted' | 'pending_approval' | 'executed' | 'rejected' | 'withdrawn' | 'expired';
 

@@ -98,9 +98,11 @@ await shot('09-meeting', true);
 // Guide
 await page.getByRole('button', { name: '? Guide' }).click();
 await wait(500);
-await shot('10-guide-empty');
+await shot('10-guide-coach');
+await page.getByRole('tab', { name: /Ask/ }).click();
+await wait(300);
 await page.getByLabel('Your question').fill('How do I hire more people?');
-await page.getByRole('button', { name: 'Ask' }).click();
+await page.getByRole('button', { name: 'Ask', exact: true }).click();
 await wait(1500);
 await shot('11-guide-answer');
 await page.getByLabel('Your question').fill('The board approved the Vela revamp but nothing happened');

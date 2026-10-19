@@ -19,6 +19,7 @@
 import { addDays, isMonthEnd, monthKey, type SimDate } from '../../shared/dates';
 import { fmtEur } from '../../shared/money';
 import { holdBoardMeeting, monthlyConfidence, upcomingMeeting } from './board';
+import { finalReview } from './mandate';
 import { closeMonth } from './close';
 import { processCommitments } from './commitments';
 import { runEvents, scheduledDevelopments, upkeepIssues } from './events';
@@ -35,6 +36,8 @@ import { emit, type World } from './world';
 export interface TickHooks {
   /** Called when the board approved a proposal linked to an action; must commit it on `w`. */
   onBoardApproved?: (w: World, actionId: string, proposalId: string) => void;
+  /** Checked after each day; returning a reason stops the advance early (something needs the CEO). */
+  stopAfterDay?: (w: World) => string | null;
 }
 
 export interface DayResult {
@@ -97,6 +100,7 @@ export function advanceDay(w: World, hooks: TickHooks = {}): DayResult {
   // 10. forecasts & terminal checks
   if (w.mode === 'live') updateProjectForecasts(w);
   checkTerminal(w, pay.overdue, ds.defaulted.map((x) => x.name));
+  finalReview(w);
 
   // advance the clock
   const next = addDays(d, 1);
@@ -135,6 +139,7 @@ export function advanceDays(w: World, days: number, hooks: TickHooks = {}): DayR
   for (let i = 0; i < days; i++) {
     if (w.meta.status !== 'active') break;
     out.push(advanceDay(w, hooks));
+    if (i < days - 1 && hooks.stopAfterDay?.(w)) break;
   }
   return out;
 }

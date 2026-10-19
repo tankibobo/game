@@ -33,6 +33,7 @@ const STATUS_TONE: Record<string, string> = {
   active: 'info', completed: 'good', resolved: 'good', fulfilled: 'good', committed: 'good', executed: 'good', approved: 'good', agreed: 'good', compliant: 'good', running: 'good', in_production: 'good', operating: 'good', open: 'info', offered: 'info', scheduled: 'info', in_progress: 'info', ramp_up: 'info', investigating: 'info', mitigating: 'info', under_review: 'info',
   delayed: 'warning', pending_confirmation: 'warning', pending_approval: 'warning', due: 'warning', waived: 'warning', proposed: 'warning', blocked: 'critical', breached: 'critical', broken: 'critical', rejected: 'critical', failed: 'critical', invalid: 'critical', overdue: 'critical', cancelled: '', withdrawn: '', expired: '', superseded: '', idle: '', not_ready: '', development: 'info', discontinued: '', pending: '',
   critical: 'critical', high: 'warning', medium: 'warning', low: '', warning: 'warning', notice: 'info', info: '',
+  dismissed: 'critical', insolvent: 'critical', not_renewed: 'critical',
 };
 
 export function Status({ s, label }: { s: string | null | undefined; label?: string }) {

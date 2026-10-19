@@ -7,6 +7,8 @@
  * balancing figure and is reported as such); payables/receivables are seeded
  * from the same daily volumes the engine will simulate.
  */
+import type { Difficulty } from '../../shared/domain';
+import { scenarioOf, type ScenarioBuildContext } from './scenarios';
 import type {
   Character,
   Commitment,
@@ -787,7 +789,9 @@ export function unitMaterialCost(w: Pick<World, 'supplies'>, m: VehicleModel): C
  * Build the complete initial world, including the opening balance journal
  * entry. Does not touch the database.
  */
-export function buildInitialWorld(seed = DEFAULT_SEED): World {
+export function buildInitialWorld(seed = DEFAULT_SEED, scenarioKey = 'turnaround', difficulty: Difficulty = 'standard'): World {
+  const scenario = scenarioOf(scenarioKey);
+  const ctx: ScenarioBuildContext = { openingCashCents: C(1_200) };
   const { competitors: comps, products } = competitors();
   const { factories: facs, lines } = factories();
   const { suppliers: sups, supplies } = suppliers();
@@ -803,6 +807,7 @@ export function buildInitialWorld(seed = DEFAULT_SEED): World {
     boardPlan: { eonSopDate: '2027-10-01', ebitTargetCents: C(210), minLiquidityCents: C(700), fiscalYear: 2027 },
     nextBoardMeeting: fourthThursday(2027, 1), extraordinaryMeeting: null, lastForecastSummary: null, liquidityStressDays: 0, missedPaymentDays: 0,
     legacyDepMonthlyCents: C(25), newPpeGrossCents: 0, amortizingDevCents: 0, forecastStale: 1, distributionUtility: -0.15, leaseMonthlyCents: 0, assetsSold: [], version: 1,
+    scenarioKey: scenario.key, difficulty, termEndDate: '2029-12-31', mandate: null,
   };
   const w: World = {
     meta, macro, segments: segments(), models: models(), competitors: comps, competitorProducts: products, factories: facs, lines, suppliers: sups, supplies,
@@ -810,6 +815,9 @@ export function buildInitialWorld(seed = DEFAULT_SEED): World {
     debts: dbts, covenants, receivables: [], payables: [], contracts: contracts(), negotiations: negotiations(), financing: [], boardProposals: [],
     regulations: regulations(), eventStates: [], balances: {}, snapshots: history2026(), out: emptyOutput(), mode: 'live', scenarioDemandFactor: 1,
   };
+
+  // --- the starting scenario (before calibration and the opening balance sheet)
+  scenario.apply?.(w, ctx);
 
   // --- calibrate demand so that starting retail volumes match FY2026 run-rates
   const calDate = '2027-06-01';
@@ -820,6 +828,8 @@ export function buildInitialWorld(seed = DEFAULT_SEED): World {
   const growthAt = (seg: Segment) => Math.pow(1 + seg.growthPerYear, diffDays(calDate, START_DATE) / 365.25);
   calibrateOtherUtility(w, 'SEG-CHATCH', 'MDL-VELA', 130_000 / 12 / (chatch.baseMonthlyUnits * season('SEG-CHATCH') * mf * growthAt(chatch)) * season('SEG-CHATCH'), calDate);
   calibrateOtherUtility(w, 'SEG-CSUV', 'MDL-KORA', 165_000 / 12 / (csuv.baseMonthlyUnits * season('SEG-CSUV') * mf * growthAt(csuv)) * season('SEG-CSUV'), calDate);
+
+  scenario.afterCalibration?.(w);
 
   // --- inventory valuation at standard material cost
   for (const m of w.models) m.fgValueCents = m.fgUnits * unitMaterialCost(w, m);
@@ -881,7 +891,7 @@ export function buildInitialWorld(seed = DEFAULT_SEED): World {
   const inv = w.models.reduce((a, m) => a + m.fgValueCents, 0);
   const debt = w.debts.reduce((a, d) => a + d.principalCents, 0);
   const obLines = [
-    { account: '1000', amountCents: C(1_200) },
+    { account: '1000', amountCents: ctx.openingCashCents },
     { account: '1100', amountCents: ar },
     { account: '1200', amountCents: inv },
     { account: '1500', amountCents: C(6_200) },
@@ -904,6 +914,7 @@ export function buildInitialWorld(seed = DEFAULT_SEED): World {
   return w;
 }
 
+/** Brief of the default scenario (kept for compatibility; see scenarios.ts for all briefs). */
 export const SCENARIO_BRIEF = `You are the new CEO of Asterion Automotive (Lyon), appointed with effect from 1 January 2027.
 FY2026: revenue ≈ €7.5bn, operating margin ≈ 3.2%, 310,000 vehicles built, 18,000 employees.
 Cash €1.2bn, gross debt €2.4bn (incl. a €900m bond due Nov 2028), undrawn €500m RCF.

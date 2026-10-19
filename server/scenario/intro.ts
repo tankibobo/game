@@ -1,27 +1,39 @@
 /** Opening inbox: the situation the new CEO finds on 1 January 2027. */
 import type { World } from '../engine/world';
-import { inbox } from '../engine/world';
+import { byId, inbox } from '../engine/world';
+import { fmtDate } from '../../shared/dates';
+import { fmtEur } from '../../shared/money';
+import { scenarioOf } from './scenarios';
+
+type Msg = Parameters<typeof inbox>[1];
 
 export function addIntroInbox(w: World): void {
-  inbox(w, {
+  const scenario = scenarioOf(w.meta.scenarioKey);
+  const skip = new Set(scenario.skipIntro);
+  const send = (key: string, m: Msg) => {
+    if (!skip.has(key)) inbox(w, m);
+  };
+  const plan = w.meta.boardPlan;
+  const bond = byId(w.debts, 'DEBT-BOND28');
+  send('welcome', {
     kind: 'letter',
     fromId: 'CHR-DUBREUIL',
     subject: 'Welcome — and what the board expects',
     body: `Welcome to Asterion. You inherit a company with good people and a narrow margin for error.
 
 The board's expectations for 2027 are simple to state and hard to deliver:
-• Keep liquidity above €700m and stay inside our bank covenants.
-• Get the Eon into production — the plan we approved in October says 1 October 2027.
-• Present a credible refinancing plan for the €900m bond (due November 2028) at our April meeting — that means a financing request (bank loan, bond, equity…) submitted to us or to the lenders by then.
-• Operating profit of around €210m.
+• Keep liquidity above ${fmtEur(plan.minLiquidityCents)} and stay inside our bank covenants.
+• Get the Eon into production — the plan says ${fmtDate(plan.eonSopDate, 'long')}.
+• Present a credible refinancing plan for the €900m bond (due ${bond ? fmtDate(bond.maturityDate, 'month') : '2028'}) at our April meeting — that means a financing request (bank loan, bond, equity…) submitted to us or to the lenders by then.
+• Operating profit of around ${fmtEur(plan.ebitTargetCents)}.
 
-Our next meeting is on 28 January. I would rather hear bad news early than late.
+Your mandate runs until ${fmtDate(w.meta.termEndDate, 'long')}. At the end of it we will review the whole record — the Eon, the Vela, the refinancing, profit, liquidity and whether you kept your word — and decide whether to renew you. In between, we judge you at every quarterly meeting. Our next meeting is on 28 January. I would rather hear bad news early than late.
 
 Charlotte Dubreuil, Chair`,
     priority: 'high',
     linked: [{ type: 'character', id: 'CHR-DUBREUIL' }],
   });
-  inbox(w, {
+  send('finance', {
     kind: 'report',
     fromId: 'CHR-HOLM',
     subject: 'Finance: where we stand',
@@ -39,7 +51,7 @@ Margarethe`,
     priority: 'high',
     linked: [{ type: 'character', id: 'CHR-HOLM' }],
   });
-  inbox(w, {
+  send('eon', {
     kind: 'report',
     fromId: 'CHR-WIERZBICKI',
     subject: 'Eon programme — honest status',
@@ -53,7 +65,7 @@ Tomasz`,
     priority: 'high',
     linked: [{ type: 'project', id: 'PRJ-EON' }, { type: 'issue', id: 'ISS-THERMAL' }],
   });
-  inbox(w, {
+  send('union', {
     kind: 'invitation',
     fromId: 'CHR-NOVAK',
     subject: 'Request for a meeting — wage agreement',
@@ -63,7 +75,7 @@ Dragan Novak, United Metalworkers’ Confederation`,
     priority: 'normal',
     linked: [{ type: 'negotiation', id: 'NEG-UNION' }],
   });
-  inbox(w, {
+  send('voltaris', {
     kind: 'invitation',
     fromId: 'CHR-SUND',
     subject: 'Eon volumes — let us find a solution',
@@ -73,7 +85,7 @@ Mikael Sund, CEO, Voltaris Cells`,
     priority: 'normal',
     linked: [{ type: 'negotiation', id: 'NEG-VOLTARIS' }],
   });
-  inbox(w, {
+  send('coo', {
     kind: 'request',
     fromId: 'CHR-MARCHETTI',
     subject: 'Decision needed: Vela Euro 7 project and the Kora inverter',
@@ -85,4 +97,5 @@ Elena`,
     priority: 'high',
     linked: [{ type: 'project', id: 'PRJ-VELA-E7' }, { type: 'issue', id: 'ISS-KORA-INV' }],
   });
+  scenario.intro?.(w);
 }

@@ -1,11 +1,11 @@
 /**
  * The in-game guide: answers "how do I…?" questions with step-by-step
- * instructions from the manual. It explains the interface and the rules and
- * never recommends what to do — strategy is the player's job.
+ * instructions from the manual, and "what should I do?" questions with the
+ * Coach's analysis of the live game (see advisor.ts).
  *
- * With Claude available the answer is phrased from the manual (plus a few
- * live facts such as the next board meeting); otherwise the best-matching
- * manual entries are returned as they are.
+ * With Claude available the answer is phrased from the manual, the live facts
+ * and the Coach report; otherwise the best-matching manual entry, or the
+ * Coach's top advice, is returned as it is.
  */
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -17,6 +17,7 @@ import { RULES } from '../engine/params';
 import { LlmError, type LlmConfig } from '../llm/provider';
 import { parseStructured } from '../llm/schemas';
 import { MANUAL, PAGE_LABEL, type GuidePage, type ManualTopic } from './manual';
+import { coachReport, type CoachReport } from './advisor';
 import { fmtEur } from '../../shared/money';
 
 export interface GuideAnswer {
@@ -27,10 +28,12 @@ export interface GuideAnswer {
   topics: { id: string; title: string }[];
   source: 'claude' | 'manual';
   related: { id: string; title: string }[];
+  /** Ready-made decisions from the Coach that the player can preview. */
+  actions?: { type: string; payload: Record<string, unknown>; label: string; rationale?: string }[];
 }
 
 const PAGES = Object.keys(PAGE_LABEL) as GuidePage[];
-const ADVICE_RE = /\b(should i|what should|best (?:way to win|strategy|move|option|choice)|is it (?:a )?good idea|recommend|which is better|what would you do|help me win|optimal)\b/i;
+export const ADVICE_RE = /\b(should i|what should|what (?:do|can) i do|what now|next step|best (?:way|strategy|move|option|choice)|is it (?:a )?good idea|recommend|advi[cs]e|which is better|what would you do|help me|win|winning|losing|lose|keep getting fired|fired|dismiss|struggl|stuck|priorit|counsel|tips?|strategy|why is the board|board (?:is )?(?:unhappy|angry)|confidence (?:is )?(?:low|dropping|falling))/i;
 
 function tokens(s: string): string[] {
   return s.toLowerCase().replace(/[’']/g, '').split(/[^a-z0-9€]+/).filter((t) => t.length > 2 && !STOP.has(t));
@@ -77,6 +80,46 @@ function liveFacts(db: DB | null): string {
   }
 }
 
+function coachText(r: CoachReport): string {
+  const c = r.confidence;
+  return [
+    `Headline: ${r.headline}`,
+    `Board confidence ${Math.round(c.now)} now, heading for ${Math.round(c.target)}; ≈${Math.round(c.projectedNextMeeting)} after the ${c.nextMeeting} meeting. Dismissal: below ${c.threshold} at ${c.strikesAllowed} regular meetings in a row (strikes so far: ${c.strikes}).`,
+    `Confidence drivers: ${c.drivers.map((d) => `${d.label} ${d.delta > 0 ? '+' : ''}${d.delta.toFixed(0)}`).join('; ') || 'none material'}.`,
+    `Mandate score ${r.mandate.score}/100 (renewal at ${r.mandate.passScore}); final review ${r.mandate.termEnd}. Objectives: ${r.mandate.objectives.map((o) => `${o.label} ${Math.round(o.score * o.weight)}/${o.weight} (${o.state}: ${o.detail})`).join('; ')}.`,
+    'Advice, most urgent first:',
+    ...r.advice.slice(0, 10).map((a, i) => `${i + 1}. [priority ${a.priority}] ${a.title} — ${a.why} Steps: ${a.steps.join(' / ')}${a.action ? ` (one-click: ${a.action.label})` : ''}${a.deadline ? ` Deadline ${a.deadline}.` : ''}`),
+    `Principles: ${r.principles.join(' ')}`,
+  ].join('\n');
+}
+
+function safeCoach(db: DB | null): CoachReport | null {
+  if (!db) return null;
+  try {
+    return coachReport(db, loadWorld(db));
+  } catch {
+    return null;
+  }
+}
+
+/** Advice answer built directly from the Coach report (no LLM). */
+function fromCoach(r: CoachReport): GuideAnswer {
+  const top = r.advice.slice(0, 3);
+  const c = r.confidence;
+  const answer = `${r.headline} The board's confidence is driven mostly by: ${c.drivers.filter((d) => d.delta < 0).slice(0, 3).map((d) => `${d.label.toLowerCase()} (${d.delta.toFixed(0)})`).join(', ') || 'nothing negative right now'}.${top.length ? ` Your top priorities: ${top.map((a, i) => `${i + 1}) ${a.title}`).join('; ')}.` : ''}`;
+  const best = top[0];
+  return {
+    answer,
+    steps: best ? [`${best.title}: ${best.why}`, ...best.steps] : [],
+    notes: ['Open the Coach tab for the full list, each with a one-click preview.'],
+    pages: best?.link ? [{ page: best.link.page as GuidePage, label: PAGE_LABEL[best.link.page as GuidePage] ?? best.link.label }] : [],
+    topics: [],
+    source: 'manual',
+    related: MANUAL.filter((t) => ['how-to-win', 'board-confidence'].includes(t.id)).map((t) => ({ id: t.id, title: t.title })),
+    actions: top.filter((a) => a.action).map((a) => a.action!),
+  };
+}
+
 const GuideSchema = z.object({
   answer: z.string().min(1).max(1500),
   steps: z.preprocess((v) => (Array.isArray(v) ? v.slice(0, 10) : []), z.array(z.string().max(400))),
@@ -99,18 +142,17 @@ const GUIDE_JSON_SCHEMA = {
 const SYSTEM = [
   'You are the in-game help guide of "Automanager", an automotive CEO simulation. You explain HOW to do things in the game: which page, which tab, which button, and what happens afterwards.',
   'Answer only from the MANUAL and the GAME FACTS. Use the exact names of pages, tabs and buttons as written in the manual. If the manual does not cover something, say so briefly and point to the closest entry.',
-  'Never give strategic advice: do not say what the player should decide, which option is better, or what would make them win. If asked for advice, say you can only explain how things work and where to find the information needed to decide, then give that how-to.',
+  'You are also the player\'s coach. When they ask what to do, why the board is unhappy, how to win or how to stop being fired, give concrete, prioritised advice based ONLY on the COACH ANALYSIS (computed by the simulation from the live game): name the top two or three priorities, explain why in plain words, and give the steps. Mention that the Coach tab has one-click previews. Do not invent other strategies or numbers.',
   'Never invent features, numbers or rules. Keep it short and practical.',
   'Respond ONLY with JSON matching the schema.',
 ].join('\n');
 
 function fromManual(question: string): GuideAnswer {
   const hits = retrieve(question);
-  const advice = ADVICE_RE.test(question);
   if (!hits.length) {
     const basics = MANUAL.find((t) => t.id === 'basics')!;
     return {
-      answer: `${advice ? 'I can only explain how the game works, not what to decide. ' : ''}I could not find that in the manual. Try asking about a specific task — for example “How do I hire more people?”, “How do I get the board to approve a project?” or “How do I send a report to someone?”.`,
+      answer: `I could not find that in the manual. Try asking about a specific task — for example “How do I hire more people?”, “How do I get the board to approve a project?” or “How do I send a report to someone?”.`,
       steps: basics.steps,
       notes: [],
       pages: basics.pages.map((p) => ({ page: p, label: PAGE_LABEL[p] })),
@@ -121,7 +163,7 @@ function fromManual(question: string): GuideAnswer {
   }
   const best = hits[0].topic;
   return {
-    answer: `${advice ? 'I can only explain how things work, not what you should decide — but here is how to do it and where to find what you need. ' : ''}${best.summary}`,
+    answer: best.summary,
     steps: best.steps,
     notes: best.notes ?? [],
     pages: best.pages.map((p) => ({ page: p, label: PAGE_LABEL[p] })),
@@ -141,10 +183,12 @@ export function topicAnswer(id: string): GuideAnswer | null {
 export async function askGuide(db: DB | null, llm: LlmConfig, question: string, page: string | null): Promise<GuideAnswer> {
   const q = question.trim().slice(0, 600);
   if (!q) return fromManual('how to play');
-  const manualAnswer = fromManual(q);
+  const wantsAdvice = ADVICE_RE.test(q) && !/^\s*how (?:do|can|to)\b/i.test(q);
+  const coach = safeCoach(db);
+  const manualAnswer = wantsAdvice && coach ? fromCoach(coach) : fromManual(q);
   if (!llm.provider.available) return manualAnswer;
   const t0 = Date.now();
-  const user = [`MANUAL:\n${manualText()}`, `GAME FACTS:\n${liveFacts(db)}`, `The player is on the page: ${page && (PAGES as string[]).includes(page) ? PAGE_LABEL[page as GuidePage] : 'unknown'}.`, `QUESTION:\n${q}`].join('\n\n');
+  const user = [`MANUAL:\n${manualText()}`, `GAME FACTS:\n${liveFacts(db)}`, ...(coach ? [`COACH ANALYSIS:\n${coachText(coach)}`] : []), `The player is on the page: ${page && (PAGES as string[]).includes(page) ? PAGE_LABEL[page as GuidePage] : 'unknown'}.`, `QUESTION:\n${q}`].join('\n\n');
   let status = 'ok';
   let error: string | null = null;
   try {
@@ -166,6 +210,7 @@ export async function askGuide(db: DB | null, llm: LlmConfig, question: string, 
       topics: topics.map((t) => ({ id: t.id, title: t.title })),
       source: 'claude',
       related: manualAnswer.topics.concat(manualAnswer.related).filter((r) => !topics.some((t) => t.id === r.id)).slice(0, 3),
+      actions: wantsAdvice ? manualAnswer.actions : undefined,
     };
   } catch (e) {
     status = e instanceof LlmError ? e.kind : 'api_error';

@@ -1,7 +1,7 @@
 /**
  * The player's manual: how to do things in the game, step by step. The
- * in-game guide answers "how do I…?" questions from these entries only. It
- * explains the interface and the rules; it never recommends a strategy.
+ * in-game guide answers "how do I…?" questions from these entries; strategic
+ * advice comes from the Coach (advisor.ts), which reads the live game.
  */
 
 export type GuidePage = 'dashboard' | 'decisions' | 'inbox' | 'company' | 'products' | 'projects' | 'operations' | 'finance' | 'world' | 'history' | 'saves';
@@ -35,8 +35,8 @@ export const MANUAL: ManualTopic[] = [
   {
     id: 'basics',
     title: 'How the game works',
-    keywords: ['how to play', 'start', 'begin', 'goal', 'objective', 'win', 'lose', 'what do i do', 'tutorial', 'new player', 'basics'],
-    summary: 'You are the CEO of Asterion Automotive from 1 January 2027. You talk to people, take decisions and advance time; the simulation calculates what happens. The game ends if the company becomes insolvent or the board dismisses you.',
+    keywords: ['how to play', 'start', 'begin', 'goal', 'what do i do', 'tutorial', 'new player', 'basics'],
+    summary: 'You are the CEO of Asterion Automotive from 1 January 2027, with a three-year mandate. You talk to people, take decisions and advance time; the simulation calculates what happens. You win if the board renews your mandate at the final review on 31 December 2029; you lose if the company becomes insolvent, the board dismisses you, or the review score is too low.',
     steps: [
       'Read the opening messages in Inbox & meetings → Messages.',
       'Look at the Executive dashboard: cash, liquidity, forecast, board confidence, risks.',
@@ -44,9 +44,10 @@ export const MANUAL: ManualTopic[] = [
       'Talk to people with “Meet” (Company page or Inbox & meetings → Meetings).',
       'Advance time with +1 day, +1 week or +1 month at the top. Nothing happens while time stands still.',
       'After each advance, read the briefing: what happened, what needs attention, what is coming up.',
+      'Open ? Guide → Coach whenever you are unsure what to do: it lists what to fix first and why, with a one-click preview of each decision.',
     ],
     pages: ['dashboard', 'decisions', 'inbox'],
-    notes: ['The game is lost if missed payments last too long (insolvency) or if board confidence stays below 20 for two consecutive board meetings (dismissal).'],
+    notes: ['The game is lost if missed payments last too long (insolvency) or if board confidence stays below the danger line at consecutive regular board meetings (dismissal — 20 and two meetings on Standard).'],
   },
   {
     id: 'time',
@@ -54,7 +55,7 @@ export const MANUAL: ManualTopic[] = [
     keywords: ['advance', 'time', 'next day', 'next month', 'skip', 'wait', 'pass time', 'end turn', 'calendar'],
     summary: 'Time only moves when you advance it. Production, sales, payments, project work, hiring and board meetings all happen as days pass.',
     steps: [
-      'Click +1 day, +1 week or +1 month in the bar at the top of the screen.',
+      'Click +1 day, +1 week or +1 month in the bar at the top of the screen. Time pauses early when a financing offer arrives, because offers expire within days.',
       'Read the briefing that opens: built and sold cars, cash change, items that need attention, progress and what is coming up.',
       'Click “Open inbox” to read new messages, or “Continue”.',
     ],
@@ -319,22 +320,23 @@ export const MANUAL: ManualTopic[] = [
   {
     id: 'rcf',
     title: 'Draw or repay the credit line',
-    keywords: ['rcf', 'credit line', 'revolving', 'draw', 'repay', 'overdraft', 'cash now'],
-    summary: 'The €500m revolving credit facility gives cash immediately; undrawn amounts already count as liquidity.',
-    steps: ['Open Decisions → Money → “Draw or repay the credit line” (or Finance → Debt & covenants → Revolving credit facility).', 'Enter the amount in € millions and click “Draw…” or “Repay…”, then confirm.'],
+    keywords: ['rcf', 'credit line', 'revolving', 'draw', 'repay', 'overdraft', 'cash now', 'extend', 'extension'],
+    summary: 'The €500m revolving credit facility gives cash immediately; undrawn amounts already count as liquidity. It expires on 31 March 2029 unless you extend it.',
+    steps: ['Open Decisions → Money → “Draw or repay the credit line” (or Finance → Debt & covenants → Revolving credit facility).', 'Enter the amount in € millions and click “Draw…” or “Repay…”, then confirm.', 'To extend it: Decisions → Money → “Raise financing”, type “Extend the credit line (RCF)”, then preview and confirm; accept the banks’ offer when it arrives.'],
     pages: ['finance', 'decisions'],
   },
   {
     id: 'financing',
     title: 'Raise money (loan, bond, equity, asset sale)',
-    keywords: ['financing', 'raise money', 'loan', 'bond', 'refinance', 'refinancing', 'equity', 'rights issue', 'shares', 'sale and leaseback', 'leaseback', 'shareholder loan', 'debt', 'borrow', 'waiver', 'covenant waiver', 'money'],
+    keywords: ['financing', 'raise money', 'loan', 'bond', 'refinance', 'refinancing', 'equity', 'rights issue', 'shares', 'sale and leaseback', 'leaseback', 'shareholder loan', 'debt', 'borrow', 'waiver', 'covenant waiver', 'money', 'extend the rcf', 'rcf extension', 'extend credit line'],
     summary: 'You request financing; the lender or market reviews it and answers with an offer after a few weeks; you then accept or decline. Bonds, equity and asset sales need the board first.',
     steps: [
       'Open Decisions → Money → “Raise financing” (or Finance → Financing → Request financing).',
       'Choose the type, amount, tenor and purpose, then “Preview…” and confirm (or submit to the board).',
-      'Advance time; when the offer arrives (message and Decisions → In progress), accept it under Decisions → Money → “Respond to a financing offer” or Finance → Financing → Requests & offers, before it expires.',
+      'Advance time; when the offer arrives time pauses (message and Decisions → In progress). Accept it under Decisions → Money → “Respond to a financing offer” or Finance → Financing → Requests & offers, before it expires.',
     ],
     pages: ['decisions', 'finance'],
+    notes: ['Bond investors stop buying above about 4x net leverage and banks refuse covenant waivers above 4.5x; new equity (rights issue) is then the way to bring leverage down.', 'The €500m credit line expires in March 2029: “Extend the credit line (RCF)” asks the banks for three more years (possible in its last two years, not while a covenant is breached).'],
   },
   {
     id: 'negotiate',
@@ -408,9 +410,36 @@ export const MANUAL: ManualTopic[] = [
     id: 'board-confidence',
     title: 'Board confidence',
     keywords: ['board confidence', 'dismissed', 'fired as ceo', 'dismissal', 'confidence score', 'performance review'],
-    summary: 'Board confidence (0–100) is reviewed at every regular meeting from the forecast versus the board plan, covenant status, commitments to the board and directors’ trust. Below 20 at two consecutive meetings you are dismissed.',
-    steps: ['See it in the top bar and on the Executive dashboard → Board (with its drivers).', 'The minutes after each meeting explain the change.'],
+    summary: 'Board confidence (0–100) moves towards a target at every regular meeting (and a little each month). The target comes from the forecast versus the board plan (operating profit, 12-month liquidity, the Eon launch date and battery supply), covenant breaches, promises to directors and directors’ trust. On Standard, below 20 at two regular meetings in a row means dismissal; any meeting at or above the line resets the count.',
+    steps: [
+      'See it in the top bar and on the Executive dashboard → Board, with each driver and its effect.',
+      'Open ? Guide → Coach: it shows where confidence is heading at the next meeting and what to fix first.',
+      'The minutes after each meeting explain the change.',
+    ],
     pages: ['dashboard', 'inbox'],
+    notes: ['In the first months a new-CEO grace period softens the inherited problems; use it to fix them. Covenant breaches (−20) and a 12-month liquidity forecast below the board minimum (up to −20) are the most expensive drivers.'],
+  },
+  {
+    id: 'how-to-win',
+    title: 'How to win (and stop being fired)',
+    keywords: ['how to win', 'win', 'win the game', 'winning', 'objective', 'objectives', 'keep getting fired', 'fired', 'losing', 'lose', 'too hard', 'difficult', 'advice', 'strategy', 'tips', 'coach', 'what should i do', 'mandate', 'renewal', 'final review', 'score', 'grade'],
+    summary: 'You win when the board renews your three-year mandate at the final review (31 December 2029): it scores seven objectives out of 100 and renews you at 60 or more on Standard (50 Relaxed, 65 Hard). The Coach tracks the score live and tells you what to do next.',
+    steps: [
+      'Open ? Guide → Coach (or Executive dashboard → Your mandate → “Coach”). Work through the “Do now” items first; each has a “Preview” button that prepares the decision for you to check and confirm.',
+      'In the first two months, fix the inherited problems: secure Eon battery supply (Voltaris), fix the thermal validation issue, approve the Vela Euro 7 project, match production to demand, settle the wage deal and request refinancing for the 2028 bond.',
+      'Every month: advance time, accept financing offers when time pauses, sign agreements, and re-check the Coach — production rates in particular need adjusting as demand moves.',
+      'Before each board meeting: deliver what the chair asked for (a recovery plan if requested), keep promises, and meet directors whose trust is low.',
+    ],
+    pages: ['dashboard'],
+    notes: ['The objectives: board confidence (20), the Eon launch (20), Vela Euro 7 (10), refinancing the 2028 bond (15), operating profit vs budget (15), liquidity buffer (10), keeping your word (10).', 'Stuck on a hard start? Try the A Steadier Start scenario or the Relaxed difficulty first (Saves → Start a new game).'],
+  },
+  {
+    id: 'scenarios',
+    title: 'Scenarios, difficulty and seeds',
+    keywords: ['scenario', 'scenarios', 'difficulty', 'relaxed', 'standard', 'hard', 'easy', 'seed', 'random', 'other start', 'different start'],
+    summary: 'A new game starts from one of five situations (The Turnaround, A Steadier Start, Cash Crunch, Electric Rush, Labour Crisis), at one of three difficulties (how strict the board is), with a seed that decides chance events.',
+    steps: ['Open Saves → Start a new game (or the start screen).', 'Choose a starting situation, then a difficulty, then optionally a seed (“Random seed” picks one).', 'Click “Start new game”. The current game stays in its save slot.'],
+    pages: ['saves'],
   },
   {
     id: 'forecast',
@@ -464,8 +493,8 @@ export const MANUAL: ManualTopic[] = [
     id: 'saves',
     title: 'Save, load or start a new game',
     keywords: ['save', 'load', 'new game', 'restart', 'snapshot', 'slot'],
-    summary: 'The game saves continuously. You can snapshot the current state to another slot and load it later.',
-    steps: ['Open Saves.', '“Save snapshot” copies the current game; “Load” switches to a slot; “Start new game” begins again.'],
+    summary: 'The game saves continuously. You can snapshot the current state to another slot and load it later, or start a new game with another scenario, difficulty or seed.',
+    steps: ['Open Saves.', '“Save snapshot” copies the current game; “Load” switches to a slot; “Start new game” begins again (choose the scenario, difficulty and seed first).'],
     pages: ['saves'],
   },
   {

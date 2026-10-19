@@ -323,3 +323,27 @@ details > summary { cursor: pointer; }
   .topbar { padding: 10px 16px; gap: 10px; }
   .top-kpis { gap: 12px; }
 }
+.guide-tabs { display: flex; gap: 4px; padding: 8px 16px 0; border-bottom: 1px solid var(--border); }
+.guide-tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 6px 10px; font: inherit; font-size: 13px; color: var(--text-2); cursor: pointer; }
+.guide-tab[aria-selected='true'] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.coach-h { font-size: 13px; margin: 0 0 6px; }
+.coach-conf { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.coach-conf > div { display: flex; flex-direction: column; background: var(--surface-2); border-radius: 8px; padding: 6px 8px; }
+.coach-conf strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.coach-drivers { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.coach-drivers li { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-2); }
+.coach-drivers .neg { color: var(--critical-text); font-variant-numeric: tabular-nums; font-weight: 600; }
+.coach-drivers .pos { color: var(--good-text); font-variant-numeric: tabular-nums; font-weight: 600; }
+.coach-card { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.coach-card-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; background: none; border: none; font: inherit; color: inherit; cursor: pointer; }
+.coach-card-body { padding: 0 10px 10px; }
+.coach-card-body ol { margin: 6px 0 4px 18px; padding: 0; }
+.coach-card-body li { margin-bottom: 3px; }
+.coach-objs { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.scenario-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.difficulty-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.scenario-card { display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: inherit; font: inherit; cursor: pointer; }
+.scenario-card:hover { border-color: var(--border-strong); }
+.scenario-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--accent-soft); }
+.scenario-brief { margin-top: 8px; }
+.scenario-brief .pre { margin-top: 6px; max-height: 320px; overflow-y: auto; }

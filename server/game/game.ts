@@ -27,6 +27,9 @@ import { fmtEur } from '../../shared/money';
 import { ACTION_BY_TYPE, blockingApprovals, checkAuthority } from '../actions/registry';
 import type { ActionDef } from '../actions/types';
 import { DEFAULT_SEED, buildInitialWorld } from '../scenario/initial';
+import { SCENARIO_BY_KEY, scenarioOf } from '../scenario/scenarios';
+import { DIFFICULTIES } from '../engine/difficulty';
+import type { Difficulty } from '../../shared/domain';
 import { addIntroInbox } from '../scenario/intro';
 
 export class GameError extends Error {
@@ -46,16 +49,24 @@ export function refreshForecast(w: World, trigger: string): void {
   const prev = w.meta.lastForecastSummary;
   w.meta.lastForecastSummary = base;
   w.meta.forecastStale = 0;
-  reactToForecast(w, prev, base);
+  reactToForecast(w, prev, base, { ownDecision: trigger.startsWith('action:') });
 }
 
-export function createNewGame(db: DB, seed = DEFAULT_SEED): World {
+export interface NewGameOptions {
+  scenario?: string;
+  difficulty?: Difficulty;
+}
+
+export function createNewGame(db: DB, seed = DEFAULT_SEED, opts: NewGameOptions = {}): World {
   const has = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='game_meta'").get();
   if (has && db.prepare('SELECT COUNT(*) AS n FROM game_meta').get() && (db.prepare('SELECT COUNT(*) AS n FROM game_meta').get() as { n: number }).n > 0) throw new GameError('This save already contains a game.');
-  const w = buildInitialWorld(seed);
+  if (opts.scenario && !SCENARIO_BY_KEY.has(opts.scenario)) throw new GameError(`Unknown scenario "${opts.scenario}".`);
+  if (opts.difficulty && !(opts.difficulty in DIFFICULTIES)) throw new GameError(`Unknown difficulty "${opts.difficulty}".`);
+  const w = buildInitialWorld(seed, opts.scenario ?? 'turnaround', opts.difficulty ?? 'standard');
   updateProjectForecasts(w);
   addIntroInbox(w);
-  emit(w, { type: 'game_started', category: 'system', severity: 'info', title: 'You take office as CEO of Asterion Automotive', description: 'Opening position: cash €1.2bn, debt €2.4bn, Eon programme delayed, wage agreement expiring 31 March.', causeKind: 'system', source: 'scenario' });
+  const sc = scenarioOf(w.meta.scenarioKey);
+  emit(w, { type: 'game_started', category: 'system', severity: 'info', title: `You take office as CEO of Asterion Automotive — ${sc.name}`, description: `${sc.tagline} Difficulty: ${DIFFICULTIES[w.meta.difficulty].label}. Seed ${seed}. Your mandate runs to ${w.meta.termEndDate}.`, causeKind: 'system', source: 'scenario' });
   refreshForecast(w, 'new_game');
   initGame(db, w);
   return w;
@@ -612,6 +623,8 @@ export interface AdvanceResult {
   status: string;
   terminalReason: string | null;
   replayed: boolean;
+  /** Set when time stopped before the requested number of days because something needs a decision. */
+  stoppedEarly?: string | null;
 }
 
 export function advanceTime(db: DB, days: number, idempotencyKey?: string): AdvanceResult {
@@ -628,8 +641,16 @@ export function advanceTime(db: DB, days: number, idempotencyKey?: string): Adva
   const cashBefore = cash(w);
   const waiting = (db.prepare("SELECT * FROM actions WHERE status = 'approved' ORDER BY created_at").all() as Record<string, unknown>[]).map(rowToAction);
   let result: AdvanceResult | null = null;
+  const offersBefore = new Set(w.financing.filter((f) => f.status === 'offered').map((f) => f.id));
+  let stoppedEarly: string | null = null;
+  // Time pauses when a financing offer arrives: offers expire within days and must be accepted explicitly.
+  const stopAfterDay = (ww: World): string | null => {
+    const fresh = ww.financing.find((f) => f.status === 'offered' && !offersBefore.has(f.id));
+    if (fresh) stoppedEarly = `Time paused: ${fresh.counterparty} made an offer (valid until ${fresh.offer?.validUntil}). Accept or decline it under Decisions → Money.`;
+    return stoppedEarly;
+  };
   db.transaction(() => {
-    const results = advanceDays(w, days, { onBoardApproved: (ww, actionId, proposalId) => void commitApprovedOnWorld(db, ww, actionId, proposalId) });
+    const results = advanceDays(w, days, { onBoardApproved: (ww, actionId, proposalId) => void commitApprovedOnWorld(db, ww, actionId, proposalId), stopAfterDay });
     if (w.meta.status === 'active') retryApproved(db, w, waiting);
     const newYear = from.slice(0, 4) !== w.meta.currentDate.slice(0, 4);
     if ((w.meta.forecastStale || newYear) && w.meta.status === 'active') refreshForecast(w, 'period_close');
@@ -646,6 +667,7 @@ export function advanceTime(db: DB, days: number, idempotencyKey?: string): Adva
       status: w.meta.status,
       terminalReason: w.meta.terminalReason,
       replayed: false,
+      stoppedEarly,
     };
     writeWorld(db, w);
     insertAction(db, {

@@ -48,6 +48,7 @@ export function App() {
   const [advancing, setAdvancing] = useState(false);
   const [lastAdvance, setLastAdvance] = useState<any>(null);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [guideTab, setGuideTab] = useState<'coach' | 'howto' | undefined>(undefined);
 
   const toast = useCallback((text: string, kind: Toast['kind'] = 'info') => {
     const id = Date.now() + Math.random();
@@ -99,6 +100,7 @@ export function App() {
     try {
       const r = await api.post('/time/advance', { days, idempotencyKey: newKey() });
       setLastAdvance(r);
+      if (r.stoppedEarly) toast(r.stoppedEarly, 'info');
       refresh();
     } catch (e) {
       toast((e as Error).message, 'error');
@@ -107,7 +109,7 @@ export function App() {
     }
   };
 
-  const ctx = { version, refresh, nav, go, toast, propose, reviewAction, status, openGuide: () => setGuideOpen(true) };
+  const ctx = { version, refresh, nav, go, toast, propose, reviewAction, status, openGuide: (tab?: 'coach' | 'howto') => { setGuideTab(tab); setGuideOpen(true); } };
   if (!status) return <div className="empty">Connecting to the simulation server…</div>;
   const hasGame = !!status.activeSave && !!status.game;
   const meta = top?.meta;
@@ -157,7 +159,7 @@ export function App() {
                   <div className="top-kpi"><span className="l">Liquidity</span><span className="v" style={{ color: top.kpis.liquidityCents < 45_000_000_000 ? 'var(--critical-text)' : undefined }}>{fmtEur(top.kpis.liquidityCents)}</span></div>
                   <div className="top-kpi"><span className="l">Net leverage</span><span className="v">{top.kpis.netLeverage > 50 ? 'n/m' : `${top.kpis.netLeverage.toFixed(2)}x`}</span></div>
                   <div className="top-kpi"><span className="l">Board confidence</span><span className="v" style={{ color: top.board.confidence < 30 ? 'var(--critical-text)' : undefined }}>{Math.round(top.board.confidence)}/100</span></div>
-                  <button className="btn sm guide-btn" onClick={() => setGuideOpen(true)} title="Ask how to do something in the game">? Guide</button>
+                  <button className="btn sm guide-btn" onClick={() => setGuideOpen(true)} title="Coach and how-to help">? Guide</button>
                   <span className={`pill ${status.llm.available ? 'info' : ''}`} title={status.llm.available ? `Characters are voiced by ${llmLabel(status.llm)}; all outcomes are decided by the simulation engine.` : status.llm.note ?? 'Characters use the deterministic rule-based responder.'}>
                     {status.llm.available ? (status.llm.provider === 'claude-code' ? 'Claude characters' : 'LLM characters') : 'Deterministic mode'}
                   </span>
@@ -166,7 +168,12 @@ export function App() {
             </header>
             {over && (
               <div className="callout critical" style={{ margin: '12px 20px 0' }}>
-                <strong>Game over — {status.game.status === 'insolvent' ? 'insolvency' : 'dismissed by the board'}.</strong> {status.game.terminal_reason} You can review the history, or start a new game / load a save under Saves.
+                <strong>Game over — {status.game.status === 'insolvent' ? 'insolvency' : status.game.status === 'not_renewed' ? 'mandate not renewed' : 'dismissed by the board'}.</strong> {status.game.terminal_reason} You can review the history, or start a new game (another scenario, difficulty or seed) / load a save under Saves.
+              </div>
+            )}
+            {!over && status.game?.mandate?.passed && (
+              <div className="callout good" style={{ margin: '12px 20px 0' }}>
+                <strong>You won — mandate renewed (grade {status.game.mandate.grade}, {status.game.mandate.score}/100).</strong> The board reviewed your three years on {fmtDate(status.game.mandate.date, 'long')} and renewed your contract. You can keep running Asterion, or try a tougher scenario or difficulty under Saves.
               </div>
             )}
             <main className="content">
@@ -187,7 +194,7 @@ export function App() {
         </div>
       )}
       {review && <ActionReview key={review.id} action={review} onClose={() => { setReview(null); refresh(); }} />}
-      {guideOpen && <Guide page={nav.page} onClose={() => setGuideOpen(false)} />}
+      {guideOpen && <Guide page={nav.page} initialTab={guideTab} onClose={() => { setGuideOpen(false); setGuideTab(undefined); }} />}
       {lastAdvance && (
         <Modal title={lastAdvance.briefing.subject} onClose={() => setLastAdvance(null)} footer={<><button className="btn" onClick={() => { setLastAdvance(null); go('inbox'); }}>Open inbox</button><button className="btn primary" onClick={() => setLastAdvance(null)}>Continue</button></>}>
           {lastAdvance.status !== 'active' && <div className="callout critical">{lastAdvance.terminalReason}</div>}

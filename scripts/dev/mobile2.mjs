@@ -18,9 +18,12 @@ for (const scheme of ['light', 'dark']) {
   await page.goto(`${base}/#/dashboard`);
   await page.waitForTimeout(800);
   await page.getByRole('button', { name: '? Guide' }).click();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(800);
+  console.log(scheme, 'coach overflow', await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth));
+  await page.screenshot({ path: `${out}/${scheme}-coach.png` });
+  await page.getByRole('tab', { name: /Ask/ }).click();
   await page.getByLabel('Your question').fill('How do I sign an agreement?');
-  await page.getByRole('button', { name: 'Ask' }).click();
+  await page.getByRole('button', { name: 'Ask', exact: true }).click();
   await page.waitForTimeout(1200);
   console.log(scheme, 'guide overflow', await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth));
   await page.screenshot({ path: `${out}/${scheme}-guide.png` });

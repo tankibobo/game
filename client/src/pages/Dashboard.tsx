@@ -16,15 +16,45 @@ function GettingStarted({ onHide }: { onHide: () => void }) {
         <li>Open <a href="#" onClick={(e) => { e.preventDefault(); go('decisions'); }}>Decisions</a> to see everything you can decide. <strong>Preview…</strong> never changes anything: it shows the consequences, who approves and what happens next.</li>
         <li>Decisions above your authority go to the board when you confirm them; the review shows how each director is likely to vote. If approved they are carried out on the meeting day.</li>
         <li>Advance time with <strong>+1 day / +1 week / +1 month</strong> and read the briefing. Dated effects (hires, consultations, board votes) appear in Decisions → In progress.</li>
-        <li>Not sure how to do something? Click <a href="#" onClick={(e) => { e.preventDefault(); openGuide(); }}>? Guide</a> and ask, e.g. “How do I hire more people?”.</li>
+        <li>Not sure what to do? Open the <a href="#" onClick={(e) => { e.preventDefault(); openGuide('coach'); }}>Coach</a> (? Guide): it lists what to fix first, why, and lets you preview each decision in one click. To learn how something works, ask the Guide, e.g. “How do I hire more people?”.</li>
       </ol>
+    </Card>
+  );
+}
+
+const OBJ_TONE: Record<string, [string, string]> = { met: ['Met', 'good'], on_track: ['On track', 'info'], at_risk: ['At risk', 'warning'], missed: ['Missed', 'critical'] };
+
+/** The three-year mandate: what the board will judge at the final review. */
+function MandateCard({ m }: { m: any }) {
+  const { openGuide } = useGame();
+  if (!m) return null;
+  const r = m.result;
+  return (
+    <Card title="Your mandate" sub={r ? `Final review ${fmtDate(r.date, 'long')}` : `Final review ${fmtDate(m.termEnd, 'long')} · ${m.difficulty}`} actions={<button className="btn sm" onClick={() => openGuide('coach')}>Coach</button>}>
+      {r && <div className={`callout ${r.passed ? 'good' : 'critical'} small`} style={{ marginBottom: 8 }}>{r.passed ? `Renewed — grade ${r.grade}, ${r.score}/100. You won.` : `Not renewed — ${r.score}/100 (needed ${r.passScore}).`}</div>}
+      <div className="row" style={{ alignItems: 'baseline' }}>
+        <div style={{ fontSize: 26, fontWeight: 750 }}>{m.score}</div>
+        <div className="muted">/ 100 if judged today</div>
+        <div className="spacer" />
+        <span className="small muted">renewal at {m.passScore}</span>
+      </div>
+      <Progress value={m.score / 100} tone={m.score < m.passScore ? 'var(--serious)' : undefined} />
+      <div className="small" style={{ marginTop: 8 }}>
+        {m.objectives.map((o: any) => (
+          <div key={o.id} className="row" style={{ justifyContent: 'space-between', gap: 6 }} title={`${o.detail} — ${o.hint}`}>
+            <span className="sub" style={{ flex: 1 }}>{o.label}</span>
+            <span className={`pill ${OBJ_TONE[o.state][1]}`}>{OBJ_TONE[o.state][0]}</span>
+            <span className="num tiny muted" style={{ width: 38, textAlign: 'right' }}>{Math.round(o.score * o.weight)}/{o.weight}</span>
+          </div>
+        ))}
+      </div>
     </Card>
   );
 }
 
 export function Dashboard() {
   const { data: d, error } = useView<any>('/dashboard');
-  const { go, reviewAction } = useGame();
+  const { go, reviewAction, openGuide } = useGame();
   const [hideStart, setHideStart] = useState(() => {
     try {
       return localStorage.getItem(START_KEY) === '1';
@@ -193,6 +223,7 @@ export function Dashboard() {
               </div>
             )}
           </Card>
+          <MandateCard m={d.mandate} />
           <Card title="Board" sub={`Next meeting ${fmtDate(d.board.nextMeeting, 'long')} (${diffDays(d.board.nextMeeting, today)} days)`}>
             <div className="row" style={{ alignItems: 'baseline' }}>
               <div style={{ fontSize: 26, fontWeight: 750 }}>{Math.round(d.board.confidence)}</div>
@@ -201,7 +232,7 @@ export function Dashboard() {
               <span className="small muted">trend → {Math.round(d.board.target)}</span>
             </div>
             <Progress value={d.board.confidence / 100} tone={d.board.confidence < 30 ? 'var(--critical)' : undefined} />
-            {d.board.lowConfidenceMeetings > 0 && <div className="callout critical small" style={{ marginTop: 8 }}>The board has formally warned you. Another meeting below 20 means dismissal.</div>}
+            {d.board.lowConfidenceMeetings > 0 && <div className="callout critical small" style={{ marginTop: 8 }}>The board has formally warned you ({d.board.lowConfidenceMeetings} of {d.board.dismissalMeetings} meetings below {d.board.dismissalThreshold}). {d.board.dismissalMeetings - d.board.lowConfidenceMeetings <= 1 ? `Another meeting below ${d.board.dismissalThreshold} means dismissal.` : ''} <a href="#" onClick={(e) => { e.preventDefault(); openGuide('coach'); }}>Ask the Coach what to fix</a>.</div>}
             <div className="small" style={{ marginTop: 8 }}>
               {d.board.factors.filter((f: any) => Math.abs(f.delta) >= 0.5).map((f: any, i: number) => (
                 <div key={i} className="row" style={{ justifyContent: 'space-between' }}>

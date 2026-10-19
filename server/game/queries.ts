@@ -18,6 +18,8 @@ import { availableCrew, requiredCrew, unitCostOf } from '../engine/operations';
 import { RULES } from '../engine/params';
 import { milestonesOf } from '../engine/projects';
 import { byId, type World } from '../engine/world';
+import { difficultyOf } from '../engine/difficulty';
+import { mandateObjectives, mandateScore } from '../engine/mandate';
 import { ACTIONS } from '../actions/registry';
 import { PROJECT_TEMPLATES } from '../actions/templates';
 import { templateStatus } from './decisions';
@@ -103,7 +105,11 @@ export function dashboard(db: DB) {
     projects: w.projects.map((p) => ({ id: p.id, name: p.name, status: p.status, priority: p.priority, targetDate: p.targetDate, originalTargetDate: p.originalTargetDate, forecastDate: p.forecastDate, forecastP80Date: p.forecastP80Date, budgetCents: p.budgetCents, spentCents: p.spentCents, progress: progressOf(w, p.id) })),
     issues: w.issues.filter((i) => !['resolved', 'closed'].includes(i.status)).sort((a, b) => sevRank(b.severity) - sevRank(a.severity)),
     commitments: { upcoming: commitments.filter((c) => !c.dueDate || c.dueDate >= d).slice(0, 10), overdue: commitments.filter((c) => c.dueDate && c.dueDate < d) },
-    board: { confidence: w.meta.boardConfidence, target: conf.target, factors: conf.factors, nextMeeting: upcomingMeeting(w), scheduled: w.boardProposals.filter((p) => p.status === 'scheduled'), plan: w.meta.boardPlan, lowConfidenceMeetings: w.meta.lowConfidenceMeetings },
+    board: { confidence: w.meta.boardConfidence, target: conf.target, factors: conf.factors, nextMeeting: upcomingMeeting(w), scheduled: w.boardProposals.filter((p) => p.status === 'scheduled'), plan: w.meta.boardPlan, lowConfidenceMeetings: w.meta.lowConfidenceMeetings, dismissalThreshold: difficultyOf(w).dismissalThreshold, dismissalMeetings: difficultyOf(w).dismissalMeetings },
+    mandate: (() => {
+      const objectives = mandateObjectives(w);
+      return { score: mandateScore(objectives), passScore: difficultyOf(w).passScore, termEnd: w.meta.termEndDate, difficulty: difficultyOf(w).label, objectives, result: w.meta.mandate };
+    })(),
     debtMaturities: w.debts.filter((x) => x.status === 'active').map((x) => ({ id: x.id, name: x.name, principalCents: x.principalCents, maturityDate: x.maturityDate, nextAmortization: x.amortization.find((a) => a.date >= d) ?? null })).sort((a, b) => (a.maturityDate < b.maturityDate ? -1 : 1)),
     covenants: w.covenants,
     forecast: fc ? { createdDate: fc.createdDate, trigger: fc.trigger, scenarios: fc.data.scenarios.map((s) => ({ key: s.key, label: s.label, summary: s.summary, months: s.months })), notes: fc.data.notes } : null,

@@ -23,7 +23,7 @@ interface Ctx {
   propose: (type: string, payload: unknown, opts?: { rationale?: string; title?: string }) => void;
   reviewAction: (actionId: string) => void;
   status: any;
-  openGuide: () => void;
+  openGuide: (tab?: 'coach' | 'howto') => void;
 }
 
 const C = createContext<Ctx>(null as unknown as Ctx);

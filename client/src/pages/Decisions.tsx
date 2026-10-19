@@ -27,7 +27,11 @@ const FINANCING_KINDS: [string, string][] = [
   ['shareholder_loan', 'Shareholder loan — from the anchor shareholder; independent directors approve'],
   ['ceo_contribution', 'Personal contribution from you — related party; independent directors approve'],
   ['covenant_waiver', 'Covenant waiver — ask lenders to relax a covenant for a fee'],
+  ['rcf_extension', 'Extend the credit line (RCF) by three years — your decision; banks charge a fee'],
 ];
+
+/** Requests that carry no amount (relief rather than money). */
+const NO_AMOUNT = ['covenant_waiver', 'rcf_extension'];
 
 /** One decision: a title, who decides, a plain explanation, and its form. */
 function Decision({ title, who, children, hint }: { title: string; who: string; hint?: ReactNode; children: ReactNode }) {
@@ -288,10 +292,10 @@ function Money({ d }: { d: any }) {
         <Decision title="Raise financing" who="You up to €100m of bank debt; bonds, equity and asset sales: the board" hint="Lenders and investors review the request and answer with an offer (or a refusal) after a few weeks; you then accept or decline the offer below. Board approval, where needed, comes first.">
           <div className="form-grid">
             <label className="field" style={{ gridColumn: '1 / -1' }}>Type<select value={fin.kind} onChange={(e) => setFin({ ...fin, kind: e.target.value })}>{FINANCING_KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
-            <label className="field">Amount (€m)<input type="number" min={1} value={fin.m} onChange={(e) => setFin({ ...fin, m: e.target.value })} /></label>
+            <label className="field">Amount (€m)<input type="number" min={1} value={NO_AMOUNT.includes(fin.kind) ? '' : fin.m} disabled={NO_AMOUNT.includes(fin.kind)} placeholder={NO_AMOUNT.includes(fin.kind) ? 'not needed' : ''} onChange={(e) => setFin({ ...fin, m: e.target.value })} /></label>
             <label className="field">Tenor (years)<input type="number" min={1} max={10} value={fin.tenor} onChange={(e) => setFin({ ...fin, tenor: e.target.value })} /></label>
             <label className="field" style={{ gridColumn: '1 / -1' }}>Purpose (shown to lenders)<input type="text" value={fin.why} onChange={(e) => setFin({ ...fin, why: e.target.value })} placeholder="e.g. Refinance the 2028 bond" /></label>
-            <div><button className="btn primary" disabled={!(num(fin.m) > 0)} onClick={() => propose('request_financing', { kind: fin.kind, amountCents: Math.round(num(fin.m) * 1e8), tenorYears: Math.round(num(fin.tenor) || 5), rationale: fin.why.trim() || 'Financing request' })}>Preview…</button></div>
+            <div><button className="btn primary" disabled={!NO_AMOUNT.includes(fin.kind) && !(num(fin.m) > 0)} onClick={() => propose('request_financing', { kind: fin.kind, amountCents: NO_AMOUNT.includes(fin.kind) ? 0 : Math.round(num(fin.m) * 1e8), tenorYears: Math.round(num(fin.tenor) || 5), rationale: fin.why.trim() || 'Financing request' })}>Preview…</button></div>
           </div>
         </Decision>
       </Card>

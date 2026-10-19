@@ -4,14 +4,14 @@ import { addDays } from '../../../shared/dates';
 import { fmtEur, mEur } from '../../../shared/money';
 import { COUNTERPARTY, REVIEW_DAYS, executeFinancing, financingAnalysis } from '../../engine/financing';
 import { cash } from '../../engine/ledger';
-import { liquidity, rcf, rcfAvailable, rcfBlocked } from '../../engine/metrics';
+import { interestCover, liquidity, netLeverage, rcf, rcfAvailable, rcfBlocked } from '../../engine/metrics';
 import { liquidityTightness } from '../../engine/board';
 import { RULES } from '../../engine/params';
 import { drawRcf, repayRcf } from '../../engine/treasury';
 import { byId, emit, nextId, type World } from '../../engine/world';
 import { ok, type ActionDef, type ApprovalRequirement } from '../types';
 
-const KINDS = ['rcf_draw', 'rcf_repay', 'bank_term_loan', 'bond', 'rights_issue', 'shareholder_loan', 'ceo_contribution', 'sale_leaseback', 'covenant_waiver'] as const;
+const KINDS = ['rcf_draw', 'rcf_repay', 'bank_term_loan', 'bond', 'rights_issue', 'shareholder_loan', 'ceo_contribution', 'sale_leaseback', 'covenant_waiver', 'rcf_extension'] as const;
 
 const KIND_LABEL: Record<FinancingKind, string> = {
   rcf_draw: 'Draw on the revolving credit facility',
@@ -23,6 +23,7 @@ const KIND_LABEL: Record<FinancingKind, string> = {
   ceo_contribution: 'CEO personal share subscription',
   sale_leaseback: 'Sale-and-leaseback of the HQ campus',
   covenant_waiver: 'Covenant waiver from the banks',
+  rcf_extension: 'Extend the revolving credit facility',
 };
 
 type Req = { kind: FinancingKind; amountCents: number; tenorYears?: number; rationale: string };
@@ -81,8 +82,23 @@ export const requestFinancing: ActionDef<Req> = {
       case 'sale_leaseback':
         if (w.meta.assetsSold.includes('HQ_CAMPUS')) v.errors.push('The HQ campus has already been sold.');
         break;
-      case 'covenant_waiver':
-        if (!w.covenants.some((c) => c.status === 'breached') && !w.covenants.some((c) => c.lastValue !== null && (c.comparator === 'max' ? c.lastValue > c.threshold * 0.9 : c.lastValue < c.threshold * 1.1))) v.errors.push('No covenant is breached or close to its limit; lenders will not discuss a waiver.');
+      case 'rcf_extension': {
+        const r = rcf(w);
+        if (!r) v.errors.push('There is no active revolving credit facility to extend.');
+        else if (r.maturityDate > addDays(w.meta.currentDate, 730)) v.errors.push(`The RCF runs until ${r.maturityDate}; banks discuss an extension only in the last two years before maturity.`);
+        if (rcfBlocked(w)) v.errors.push('Banks will not extend the RCF while a covenant is in breach — obtain a waiver first.');
+        break;
+      }
+      case 'covenant_waiver': {
+        // Headroom on today's figures (the last quarterly test can be months old).
+        const live = (c: (typeof w.covenants)[number]) => (c.metric === 'net_leverage' ? netLeverage(w) : c.metric === 'interest_cover' ? interestCover(w) : c.lastValue);
+        const close = w.covenants.some((c) => {
+          const v = live(c);
+          return v !== null && c.metric !== 'min_liquidity' && (c.comparator === 'max' ? v > c.threshold * 0.9 : v < c.threshold * 1.1);
+        });
+        if (!w.covenants.some((c) => c.status === 'breached') && !close) v.errors.push('No covenant is breached or close to its limit; lenders will not discuss a waiver.');
+        break;
+      }
         break;
     }
     return v;
@@ -148,7 +164,7 @@ export const acceptFinancing: ActionDef<{ financingId: string }> = {
       consequences: [
         ...(o.amountCents ? [{ label: 'Proceeds', amountCents: o.amountCents, kind: 'cash' as const }] : []),
         { label: 'Fees', amountCents: -o.feesCents, kind: 'cash' as const },
-        ...(o.rateBps && f.kind !== 'covenant_waiver' ? [{ label: `Interest ${(o.rateBps / 100).toFixed(2)}% for ${o.tenorYears} years`, amountCents: -Math.round((o.amountCents * o.rateBps) / 10_000), timing: 'per year', kind: 'pnl' as const }] : []),
+        ...(o.rateBps && f.kind !== 'covenant_waiver' && f.kind !== 'rcf_extension' ? [{ label: `Interest ${(o.rateBps / 100).toFixed(2)}% for ${o.tenorYears} years`, amountCents: -Math.round((o.amountCents * o.rateBps) / 10_000), timing: 'per year', kind: 'pnl' as const }] : []),
         ...o.conditions.map((c) => ({ label: c, kind: 'info' as const })),
       ],
       approvals: [],

@@ -41,7 +41,8 @@ export const WORLD_TABLES: TableSpec[] = [
       taxAccruedYtdCents:integer, co2ProvisionYtdCents:integer, co2UnitsYtd:integer, co2GramsYtd:real, aftersalesParc:integer, wageIndex:real,
       mtdByAccount:json, ytdByAccount:json, cfMtd:json, boardPlan:json, nextBoardMeeting:text, extraordinaryMeeting:text?, lastForecastSummary:json?,
       liquidityStressDays:integer, missedPaymentDays:integer, legacyDepMonthlyCents:integer, newPpeGrossCents:integer, amortizingDevCents:integer,
-      forecastStale:integer, distributionUtility:real, leaseMonthlyCents:integer, assetsSold:json, version:integer`),
+      forecastStale:integer, distributionUtility:real, leaseMonthlyCents:integer, assetsSold:json, version:integer,
+      scenarioKey:text, difficulty:text, termEndDate:text, mandate:json?`),
   },
   {
     table: 'macro_state',

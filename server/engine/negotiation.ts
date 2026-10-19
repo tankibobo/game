@@ -138,10 +138,14 @@ export const NEGOTIATION_TEMPLATES: Record<string, NegotiationTemplate> = {
     maxRounds: 8,
     approvalDays: 10,
     approvalBody: 'union members’ ballot',
+    available: (w) => {
+      const current = w.contracts.find((c) => c.kind === 'labor' && c.status === 'active' && c.signedDate && c.signedDate >= '2027-01-01' && c.endDate && c.endDate > addDays(w.meta.currentDate, 180));
+      return current ? `The current agreement runs until ${current.endDate}; talks on the next one open six months before it expires.` : null;
+    },
     situation: (w) => {
       const notes: string[] = [];
       let adj = 0;
-      if (w.meta.currentDate > '2027-03-31') {
+      if (w.meta.currentDate > '2027-03-31' && !w.contracts.some((c) => c.kind === 'labor' && c.status === 'active' && c.endDate && c.endDate >= w.meta.currentDate)) {
         adj -= 0.04;
         notes.push('The old agreement has expired; both sides feel the cost of conflict.');
       }
@@ -187,7 +191,9 @@ export const NEGOTIATION_TEMPLATES: Record<string, NegotiationTemplate> = {
       const old = byId(w.contracts, 'CON-LABOR-2025');
       if (old && old.status === 'active') old.status = 'superseded';
       contract.startDate = w.meta.currentDate;
-      contract.endDate = addDays(w.meta.currentDate, 730);
+      // Runs at least two years, and at least to the end of the period in its title.
+      const titleEnd = `${contract.title.match(/(\d{4})\D*$/)?.[1] ?? '0000'}-12-31`;
+      contract.endDate = [addDays(w.meta.currentDate, 730), titleEnd].sort().pop()!;
       return out;
     },
   },
@@ -477,7 +483,7 @@ export function markAgreed(w: World, n: Negotiation, terms: Record<string, numbe
   const contract: Contract = {
     id: nextId(w, 'CON'),
     kind: tpl.contractKind,
-    title: tpl.contractTitle,
+    title: n.templateKey === 'labor_agreement' ? n.title : tpl.contractTitle,
     counterpartyId: n.counterpartyId,
     counterpartyName: cp?.orgName ?? n.counterpartyId,
     status: 'agreed',
@@ -541,7 +547,7 @@ export function newNegotiation(w: World, templateKey: string, deadlineDays = 90)
   return {
     id: nextId(w, 'NEG'),
     templateKey,
-    title: t.title,
+    title: templateKey === 'labor_agreement' ? `Collective wage agreement ${w.meta.currentDate.slice(0, 4)}–${Number(w.meta.currentDate.slice(0, 4)) + 2}` : t.title,
     counterpartyId: t.counterpartyId,
     status: 'open',
     terms: t.terms,

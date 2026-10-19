@@ -7,7 +7,7 @@
 import type { BoardProposal, BoardVote, Character, ForecastSummary } from '../../shared/domain';
 import { addDays, diffDays, fourthThursday, month, year, type SimDate } from '../../shared/dates';
 import { fmtEur, mEur } from '../../shared/money';
-import { PARAMS } from './params';
+import { difficultyOf } from './difficulty';
 import { adjustTrust, byId, clamp, emit, inbox, nextId, remember, rngFor, type World } from './world';
 
 export function boardMembers(w: World): Character[] {
@@ -227,21 +227,21 @@ export function confidenceTarget(w: World): { target: number; factors: { label: 
   const avgTrust = members.reduce((a, m) => a + m.trustInCeo, 0) / Math.max(1, members.length);
   f.push({ label: 'Directors’ trust in the CEO', delta: (avgTrust - 50) * 0.4 });
   const raw = clamp(55 + f.reduce((a, x) => a + x.delta, 0), 0, 100);
-  // Honeymoon: a new CEO is judged on the inherited plan only gradually (first 150 days).
+  // Honeymoon: a new CEO is judged on the inherited plan only gradually (grace period depends on difficulty).
   const tenure = diffDays(w.meta.currentDate, w.meta.startDate);
-  const g = clamp(tenure / 150, 0, 1);
+  const g = clamp(tenure / difficultyOf(w).graceDays, 0, 1);
   const target = Math.round((55 + (raw - 55) * g) * 10) / 10;
-  if (g < 1) f.push({ label: `New-CEO grace period (${Math.round((1 - g) * 100)}% weight on inherited baseline)`, delta: target - raw });
+  if (g < 1) f.push({ label: `New-CEO grace period: inherited problems count only ${Math.round(g * 100)}% (full weight from ${addDays(w.meta.startDate, difficultyOf(w).graceDays)})`, delta: target - raw });
   return { target, factors: f };
 }
 
 export function monthlyConfidence(w: World): void {
   const { target } = confidenceTarget(w);
-  w.meta.boardConfidence = Math.round(clamp(w.meta.boardConfidence + (target - w.meta.boardConfidence) * 0.2, 0, 100) * 10) / 10;
+  w.meta.boardConfidence = Math.round(clamp(w.meta.boardConfidence + (target - w.meta.boardConfidence) * difficultyOf(w).monthlyPull, 0, 100) * 10) / 10;
 }
 
 /** Board reaction to a materially worse forecast (called when a new forecast is stored). */
-export function reactToForecast(w: World, prev: ForecastSummary | null, next: ForecastSummary): string[] {
+export function reactToForecast(w: World, prev: ForecastSummary | null, next: ForecastSummary, opts: { ownDecision?: boolean } = {}): string[] {
   if (!prev) return [];
   const reasons: string[] = [];
   // Deterioration the board itself signed off on (approved spending) is expected, not a surprise.
@@ -255,7 +255,10 @@ export function reactToForecast(w: World, prev: ForecastSummary | null, next: Fo
   const sameYear = prev.createdDate.slice(0, 4) === next.createdDate.slice(0, 4); // FY figures are not comparable across a year end
   const nextLiq = next.minLiquidity12mCents ?? next.minLiquidityCents;
   // The board only worries when the revision leaves the company short of its plan.
-  if (sameYear && ebitDrop > mEur(40) && next.fyEbitCents < plan.ebitTargetCents) reasons.push(`FY operating profit forecast down ${fmtEur(prev.fyEbitCents - next.fyEbitCents)} to ${fmtEur(next.fyEbitCents)} (plan ${fmtEur(plan.ebitTargetCents)})`);
+  // A decision of the CEO that trades profit for cash (e.g. building fewer unsold cars) is not a surprise to be alarmed by;
+  // it is judged at the next meeting. Profit drops that also cost liquidity are.
+  const tradesProfitForCash = !!opts.ownDecision && liqDrop <= 0;
+  if (sameYear && !tradesProfitForCash && ebitDrop > mEur(40) && next.fyEbitCents < plan.ebitTargetCents) reasons.push(`FY operating profit forecast down ${fmtEur(prev.fyEbitCents - next.fyEbitCents)} to ${fmtEur(next.fyEbitCents)} (plan ${fmtEur(plan.ebitTargetCents)})`);
   if (liqDrop > mEur(150) && nextLiq < plan.minLiquidityCents * 1.25) {
     const bond = w.debts.find((d) => d.id === 'DEBT-BOND28' && d.status === 'active');
     const entered = bond && diffDays(bond.maturityDate, next.createdDate) <= 366 && diffDays(bond.maturityDate, prev.createdDate) > 366;
@@ -263,7 +266,7 @@ export function reactToForecast(w: World, prev: ForecastSummary | null, next: Fo
   }
   if (sopSlip > 21) reasons.push(nextSop ? `Eon SOP forecast slipped ${sopSlip} days to ${nextSop}` : 'Eon SOP can no longer be forecast (blocked)');
   if (!reasons.length) return [];
-  const hit = Math.min(10, 3 + reasons.length * 2);
+  const hit = Math.round(Math.min(10, 3 + reasons.length * 2) * difficultyOf(w).reactionScale);
   w.meta.boardConfidence = clamp(Math.round((w.meta.boardConfidence - hit) * 10) / 10, 0, 100);
   for (const m of boardMembers(w)) {
     adjustTrust(w, m.id, -1);
@@ -319,19 +322,22 @@ export function holdBoardMeeting(w: World): MeetingResult {
   if (!extraordinary) {
     const { target, factors } = confidenceTarget(w);
     const before = w.meta.boardConfidence;
-    w.meta.boardConfidence = Math.round(clamp(before + (target - before) * 0.5, 0, 100) * 10) / 10;
+    const dset = difficultyOf(w);
+    w.meta.boardConfidence = Math.round(clamp(before + (target - before) * dset.meetingPull, 0, 100) * 10) / 10;
     minutes.push(`Performance review — board confidence ${before.toFixed(0)} → ${w.meta.boardConfidence.toFixed(0)}. Drivers: ${factors.filter((x) => Math.abs(x.delta) >= 1).map((x) => `${x.label} (${x.delta > 0 ? '+' : ''}${x.delta.toFixed(0)})`).join(', ') || 'none material'}.`);
-    if (w.meta.boardConfidence < PARAMS.confidenceDismissalThreshold) {
+    if (w.meta.boardConfidence < dset.dismissalThreshold) {
       w.meta.lowConfidenceMeetings += 1;
-      if (w.meta.lowConfidenceMeetings >= PARAMS.confidenceDismissalMeetings) {
+      if (w.meta.lowConfidenceMeetings >= dset.dismissalMeetings) {
         w.meta.status = 'dismissed';
-        w.meta.terminalReason = `The board removed you as CEO on ${d} after confidence stayed below ${PARAMS.confidenceDismissalThreshold} for ${w.meta.lowConfidenceMeetings} consecutive meetings.`;
+        w.meta.terminalReason = `The board removed you as CEO on ${d} after confidence stayed below ${dset.dismissalThreshold} for ${w.meta.lowConfidenceMeetings} consecutive meetings.`;
         emit(w, { type: 'ceo_dismissed', category: 'board', severity: 'critical', title: 'The board has dismissed the CEO', description: w.meta.terminalReason, causeKind: 'causal' });
       } else {
-        minutes.push('The chair warned that the board will consider a change of leadership if confidence does not recover by the next meeting.');
-        emit(w, { type: 'board_warning', category: 'board', severity: 'critical', title: 'Board warns the CEO', description: `Board confidence is ${w.meta.boardConfidence.toFixed(0)}/100. Another meeting below ${PARAMS.confidenceDismissalThreshold} will lead to your dismissal.`, causeKind: 'causal' });
+        const left = dset.dismissalMeetings - w.meta.lowConfidenceMeetings;
+        minutes.push(`The chair warned that the board will consider a change of leadership if confidence is still below ${dset.dismissalThreshold} at ${left === 1 ? 'the next meeting' : `the next ${left} meetings`}.`);
+        emit(w, { type: 'board_warning', category: 'board', severity: 'critical', title: 'Board warns the CEO', description: `Board confidence is ${w.meta.boardConfidence.toFixed(0)}/100. ${left === 1 ? 'Another meeting' : `${left} more meetings in a row`} below ${dset.dismissalThreshold} will lead to your dismissal. Ask the Coach (? Guide) what moves confidence fastest.`, causeKind: 'causal' });
       }
-    } else if (w.meta.boardConfidence >= 30) {
+    } else {
+      // Strikes are consecutive: any meeting at or above the threshold clears them.
       w.meta.lowConfidenceMeetings = 0;
     }
     w.meta.nextBoardMeeting = nextRegularMeeting(d);

@@ -265,6 +265,7 @@ const KINDS: [string, string, string][] = [
   ['shareholder_loan', 'Shareholder loan (Halvorsen)', 'Related party; depends on the family’s trust in you. Max €150m.'],
   ['sale_leaseback', 'HQ sale-and-leaseback', 'One-off asset sale (~€150–200m), then 15-year lease.'],
   ['covenant_waiver', 'Covenant waiver', 'Only when a covenant is breached or close; fee + margin step-up.'],
+  ['rcf_extension', 'Extend the credit line (RCF)', 'Banks extend the €500m revolving facility by 3 years (~21 days, fee). Possible in its last two years; not while a covenant is breached. Amount: 0.'],
   ['ceo_contribution', 'Personal investment (CEO)', 'Subscription for new shares at market price; needs verified personal funds.'],
 ];
 
@@ -284,7 +285,7 @@ function Financing({ fin }: { fin: any }) {
           <label className="field" style={{ gridColumn: '1 / -1' }}>Rationale<input type="text" value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Use of proceeds" /></label>
         </div>
         <div className="small muted" style={{ margin: '6px 0' }}>{KINDS.find((k) => k[0] === kind)?.[2]} Your verified personal liquid assets: {fmtEur(fin.ceo.personalLiquidCents)}.</div>
-        <button className="btn primary" onClick={() => propose('request_financing', { kind, amountCents: Math.round(Number(amount) * 1e8), tenorYears: Number(tenor), rationale: why || 'Refinancing and liquidity' })}>Preview request</button>
+        <button className="btn primary" onClick={() => propose('request_financing', { kind, amountCents: ['covenant_waiver', 'rcf_extension'].includes(kind) ? 0 : Math.round(Number(amount) * 1e8), tenorYears: Number(tenor), rationale: why || 'Refinancing and liquidity' })}>Preview request</button>
       </Card>
       <Card title="Requests & offers" flush>
         {fin.financing.length === 0 ? <Empty>No financing requests yet.</Empty> : (
