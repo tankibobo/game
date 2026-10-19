@@ -44,7 +44,7 @@ function voltarisAlreadySigned(w: World, capacity = 290, price = 9_400): void {
   const amendment: Contract = {
     id: 'CON-VOLTARIS-A1', kind: 'supply', title: 'Voltaris capacity amendment No. 1', counterpartyId: 'CHR-SUND', counterpartyName: 'Voltaris Cells', status: 'active',
     terms: { dailyVolume: capacity, priceEur: price, prepaymentM: 60, takeOrPayPct: 70 }, startDate: '2026-12-20', endDate: '2031-12-31', signedDate: '2026-12-20', valueCents: mEur(60) + eur(price) * capacity * 230 * 3,
-    templateKey: 'voltaris_supply', summary: `${capacity} packs/day from 20 April 2027 at €${price.toLocaleString('en-GB')}/pack; €60m prepayment (paid in 2026); 70% take-or-pay.`, amendmentOf: 'CON-VOLTARIS', negotiationId: null,
+    templateKey: 'voltaris_supply', summary: `${capacity} packs/day from 20 April 2027 at €${price.toLocaleString('en-GB')}/pack; €60m prepayment (paid in 2026); 70% take-or-pay.`, amendmentOf: 'CON-VOLTARIS', negotiationId: null, agreedDate: '2026-12-15',
     obligations: [{ text: `Take-or-pay: pay for at least 70% of ${capacity} packs/day once capacity is live`, dueDate: null, status: 'open' }],
   };
   w.contracts.push(amendment);

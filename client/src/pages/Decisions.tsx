@@ -318,40 +318,73 @@ function Money({ d }: { d: any }) {
   );
 }
 
+const DEAL_GROUPS: [string, string][] = [['supply', 'Suppliers'], ['sales', 'Customers (fleet sales)'], ['partners', 'Partners'], ['dealers', 'Dealers'], ['people', 'Union']];
+
 function Deals({ d }: { d: any }) {
   const { propose, go } = useGame();
+  const [why, setWhy] = useState('');
   return (
     <div className="stack">
       <Card>
-        <Decision title="Negotiate" who="You — offers go to the counterparty" hint="Open a negotiation, then make offers term by term (Inbox → Negotiations, or from a meeting with the counterparty). An agreement still has to be signed.">
-          <div className="list">
-            {d.negotiations.filter((n: any) => n.status === 'open').map((n: any) => (
-              <div key={n.id} className="list-item">
-                <div style={{ flex: 1 }}><div className="small strong">{n.title}</div><div className="tiny muted">with {n.counterpartyName}{n.deadline ? ` · deadline ${fmtDate(n.deadline)}` : ''}</div></div>
-                <button className="btn sm primary" onClick={() => go('inbox', n.id)}>Make an offer</button>
-              </div>
-            ))}
-            {d.negotiationTemplates.filter((t: any) => !t.open).map((t: any) => (
-              <div key={t.key} className="list-item">
-                <div style={{ flex: 1 }}><div className="small">{t.title}</div><div className="tiny muted">with {t.counterpartyName}{t.unavailable ? ` — ${t.unavailable}` : ''}</div></div>
-                <button className="btn sm" disabled={!!t.unavailable} onClick={() => propose('open_negotiation', { templateKey: t.key })}>Start…</button>
-              </div>
-            ))}
+        <Decision title="Negotiations under way" who="You — offers go to the counterparty" hint="Make offers term by term (or argue your case in a meeting with the counterparty). An agreement still has to be signed before anything happens.">
+          {d.negotiations.filter((n: any) => n.status === 'open').length === 0 ? <Empty>No negotiation is open. Start one below.</Empty> : (
+            <div className="list">
+              {d.negotiations.filter((n: any) => n.status === 'open').map((n: any) => (
+                <div key={n.id} className="list-item">
+                  <div style={{ flex: 1 }}><div className="small strong">{n.title}</div><div className="tiny muted">with {n.counterpartyName}{n.deadline ? ` · deadline ${fmtDate(n.deadline)}` : ''}</div></div>
+                  <button className="btn sm primary" onClick={() => go('inbox', n.id)}>Make an offer</button>
+                  <button className="btn sm ghost" onClick={() => propose('withdraw_negotiation', { negotiationId: n.id, reason: why.trim() || 'The terms on offer do not work for Asterion.' })}>Walk away…</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Decision>
+      </Card>
+      <Card>
+        <Decision title="Start a deal" who="You choose the counterparty and the deal; the terms are negotiated" hint="Each deal is a negotiation with someone who has their own interests and limits. You make offers; they accept, counter or walk away. Nothing binds until you sign.">
+          <div className="stack" style={{ gap: 10 }}>
+            {DEAL_GROUPS.map(([cat, label]) => {
+              const xs = d.negotiationTemplates.filter((t: any) => t.category === cat && !t.open);
+              if (!xs.length) return null;
+              return (
+                <div key={cat}>
+                  <div className="tiny muted" style={{ marginBottom: 4 }}>{label}</div>
+                  <div className="list">
+                    {xs.map((t: any) => (
+                      <div key={t.key} className="list-item" style={{ alignItems: 'flex-start' }}>
+                        <div style={{ flex: 1 }}>
+                          <div className="small strong">{t.title}</div>
+                          <div className="tiny">{t.description}</div>
+                          <div className="tiny muted">With {t.counterpartyName}{t.counterpartyOrg ? ` (${t.counterpartyOrg})` : ''} · terms: {t.terms.join(', ')}{t.unavailable ? ` — not now: ${t.unavailable}` : ''}</div>
+                        </div>
+                        <button className="btn sm" disabled={!!t.unavailable} onClick={() => propose('open_negotiation', { templateKey: t.key })}>Open talks…</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </Decision>
       </Card>
       <Card>
-        <Decision title="Sign an agreed contract" who="You (the board above your limit)" hint="An agreement reached at the table has no effect until it is signed.">
+        <Decision title="Sign an agreed contract" who="You (the board above your limit)" hint="An agreement at the table binds nobody until it is signed — and counterparties withdraw if you leave it unsigned for about 45 days. Legal reviews each contract; the preview lists what it commits you to.">
           {d.contractsToSign.length === 0 ? <Empty>Nothing to sign.</Empty> : (
             <div className="list">
               {d.contractsToSign.map((c: any) => (
                 <div key={c.id} className="list-item">
                   <div style={{ flex: 1 }}><div className="small strong">{c.title}</div><div className="tiny muted">{c.counterpartyName}</div></div>
-                  <button className="btn sm primary" onClick={() => propose('sign_contract', { contractId: c.id })}>Sign…</button>
+                  {c.pendingNote ? <span className="tiny muted" style={{ maxWidth: 260 }}>{c.pendingNote}</span> : (
+                    <>
+                      <button className="btn sm primary" onClick={() => propose('sign_contract', { contractId: c.id })}>Sign…</button>
+                      <button className="btn sm ghost" onClick={() => propose('decline_agreement', { contractId: c.id, reason: why.trim() || 'On reflection the terms do not work for Asterion.' })}>Decline…</button>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
           )}
+          <label className="field" style={{ marginTop: 8 }}>Reason given when you walk away or decline (optional)<input type="text" value={why} onChange={(e) => setWhy(e.target.value)} placeholder="e.g. The prepayment is more than our liquidity allows." /></label>
         </Decision>
       </Card>
     </div>

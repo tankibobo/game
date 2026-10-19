@@ -108,11 +108,13 @@ function models(): VehicleModel[] {
     demandModifierUntil: null,
     inTransit: 0,
     backlog: 0,
+    features: [] as string[],
   };
   return [
     {
       ...base,
       id: 'MDL-VELA',
+      features: ['1.2-litre petrol engine', 'Manual or automatic gearbox', '7-inch touchscreen', 'Sold through dealers'],
       name: 'Asterion Vela',
       segmentId: 'SEG-CHATCH',
       powertrain: 'ice',
@@ -143,6 +145,7 @@ function models(): VehicleModel[] {
     {
       ...base,
       id: 'MDL-KORA',
+      features: ['Full hybrid (1.6 + e-motor)', 'Automatic gearbox', '10-inch touchscreen', 'Sold through dealers'],
       name: 'Asterion Kora',
       segmentId: 'SEG-CSUV',
       powertrain: 'hev',
@@ -173,6 +176,7 @@ function models(): VehicleModel[] {
     {
       ...base,
       id: 'MDL-EON',
+      features: ['77 kWh battery, ~450 km range', 'E-Flex electric platform', 'Over-the-air updates', 'Sold through dealers'],
       name: 'Asterion Eon',
       segmentId: 'SEG-CSUV',
       powertrain: 'bev',
@@ -523,6 +527,24 @@ function characters(): { characters: Character[]; relationships: Relationship[] 
       privateInfo: [], knowledgeScope: ['dealers', 'public'], bio: 'Dealer principal in northern Italy; council president since 2023.',
     }),
     ext({
+      id: 'CHR-KRAUS', name: 'Sabine Kraus', title: 'Head of Fleet Procurement, EuroFleet Mobility', org: 'customer', orgName: 'EuroFleet Mobility',
+      skills: ['fleet procurement', 'residual values'], expertise: ['fleet', 'leasing', 'rental'],
+      objectives: ['Big discounts on large orders', 'Reliable delivery dates', 'Cars with good residual values'], incentives: 'Annual savings targets on 60,000 cars a year of fleet purchases.', riskTolerance: 45,
+      personality: 'Cool, numbers-driven, loyal to suppliers who deliver on time.', communicationStyle: 'Short emails, spreadsheets, firm deadlines.',
+      trustInCeo: 50, authority: auth(0, 0, [], 'Commits fleet orders up to €400m; larger ones go to her procurement committee.'),
+      privateInfo: [{ id: 'PI-KRA-1', fact: 'EuroFleet has budget left this year and Marivaux missed two delivery windows — she needs a reliable alternative.', revealAtTrust: 50 }],
+      knowledgeScope: ['public', 'products'], bio: 'Runs fleet purchasing for one of Europe’s largest rental and leasing groups.',
+    }),
+    ext({
+      id: 'CHR-ZHANG', name: 'Wei Zhang', title: 'Managing Director Europe, Shenlong Auto', org: 'competitor', orgName: 'Shenlong Auto',
+      skills: ['market entry', 'manufacturing partnerships'], expertise: ['ev', 'batteries', 'eu tariffs'],
+      objectives: ['Build cars inside the EU before tariffs rise', 'Low assembly fees', 'Short commitments'], incentives: 'Shenlong’s European volume target.', riskTolerance: 60,
+      personality: 'Polite, patient, very well prepared; probes for weaknesses.', communicationStyle: 'Courteous and indirect; numbers come late.',
+      trustInCeo: 45, authority: auth(0, 0, [], 'Can sign partnerships subject to his board in Shenzhen.'),
+      privateInfo: [{ id: 'PI-ZHA-1', fact: 'Shenlong has been turned down by two other European plants; Lyon is its preferred option for 2028.', revealAtTrust: 55 }],
+      knowledgeScope: ['public'], bio: 'Leads Shenlong’s European expansion from Amsterdam.',
+    }),
+    ext({
       id: 'CHR-WESTBROOK', name: 'Olivia Westbrook', title: 'Lead Analyst, Meridian Ratings', org: 'investor', orgName: 'Meridian Ratings',
       skills: ['credit analysis'], expertise: ['ratings', 'credit'], objectives: ['An accurate rating'], incentives: 'Analytical reputation.', riskTolerance: 30,
       personality: 'Neutral, analytical.', communicationStyle: 'Asks about leverage, liquidity and refinancing plans.',
@@ -566,7 +588,7 @@ function projects(): { projects: Project[]; milestones: Milestone[] } {
         { text: 'Voltaris cannot fund capacity expansion without commitments', likelihood: 'high', impact: 'high' },
         { text: 'Brno cannot recruit enough operators for two-shift ramp-up', likelihood: 'medium', impact: 'medium' },
       ],
-      lastDecision: 'Oct 2026: board accepted slip of SOP from 1 March to 1 October 2027 and a €200m budget increase.', completedDate: null,
+      lastDecision: 'Oct 2026: board accepted slip of SOP from 1 March to 1 October 2027 and a €200m budget increase.', completedDate: null, impact: [], custom: null,
       description: "Asterion's first dedicated BEV and the core of the turnaround plan. Already €200m over its original budget and seven months late.",
     },
     {
@@ -580,7 +602,7 @@ function projects(): { projects: Project[]; milestones: Milestone[] } {
       linkedModelId: 'MDL-KORA', templateKey: null,
       completionEffects: [{ type: 'model_appeal', modelId: 'MDL-KORA', delta: 4 }, { type: 'model_quality', modelId: 'MDL-KORA', delta: 2 }, { type: 'model_euro7', modelId: 'MDL-KORA' }],
       risks: [{ text: 'Engineering resources pulled to Eon', likelihood: 'medium', impact: 'medium' }],
-      lastDecision: null, completedDate: null, description: 'Keeps the Kora competitive and registrable after Euro 7 applies to all new cars (29 Nov 2027).',
+      lastDecision: null, completedDate: null, impact: [], custom: null, description: 'Keeps the Kora competitive and registrable after Euro 7 applies to all new cars (29 Nov 2027).',
     },
     {
       id: 'PRJ-VELA-E7', code: 'VE7', name: 'Vela Euro 7 compliance', kind: 'vehicle_program',
@@ -592,7 +614,7 @@ function projects(): { projects: Project[]; milestones: Milestone[] } {
       acceptanceCriteria: ['Euro 7 type approval for Vela'], dependencies: ['160 FTE from the Lyon Technical Centre'],
       linkedModelId: 'MDL-VELA', templateKey: 'vela_euro7', completionEffects: [{ type: 'model_euro7', modelId: 'MDL-VELA' }, { type: 'model_cost', modelId: 'MDL-VELA', deltaCents: eur(240) }],
       risks: [{ text: 'If not approved by ~March the Vela cannot be certified in time and sales must stop on 29 Nov 2027', likelihood: 'medium', impact: 'high' }],
-      lastDecision: 'Awaiting CEO approval (budget €42m — within CEO authority).', completedDate: null,
+      lastDecision: 'Awaiting CEO approval (budget €42m — within CEO authority).', completedDate: null, impact: [], custom: null,
       description: 'Without it, Vela sales must end on 29 November 2027. Alternatively, plan a Vela run-out and redeploy Lyon.',
     },
   ];
@@ -702,7 +724,7 @@ function debts(): { debts: DebtInstrument[]; covenants: Covenant[] } {
 }
 
 function contracts(): Contract[] {
-  const c = (x: Omit<Contract, 'amendmentOf' | 'negotiationId' | 'obligations'> & { obligations?: Contract['obligations'] }): Contract => ({ amendmentOf: null, negotiationId: null, obligations: [], ...x });
+  const c = (x: Omit<Contract, 'amendmentOf' | 'negotiationId' | 'obligations' | 'agreedDate'> & { obligations?: Contract['obligations'] }): Contract => ({ amendmentOf: null, negotiationId: null, obligations: [], agreedDate: null, ...x });
   return [
     c({ id: 'CON-VOLTARIS', kind: 'supply', title: 'Voltaris battery-pack framework agreement', counterpartyId: 'CHR-SUND', counterpartyName: 'Voltaris Cells', status: 'active', terms: { dailyVolume: 140, priceEur: 9_200, prepaymentEur: 0, takeOrPayPct: 0, paymentTermsDays: 30 }, startDate: '2024-09-01', endDate: '2031-12-31', signedDate: '2024-09-01', valueCents: C(1_900), templateKey: 'voltaris_supply', summary: 'Up to 140 packs/day at €9,200. Volumes above 140/day "subject to a separate agreement". Asterion to confirm 2028 volume forecast by 31 March 2027.', obligations: [{ text: 'Confirm 2028 volume forecast to Voltaris', dueDate: '2027-03-31', status: 'open' }] }),
     c({ id: 'CON-HANSEATIC', kind: 'supply', title: 'Hanseatic hybrid module supply agreement', counterpartyId: 'CHR-HARTMANN', counterpartyName: 'Hanseatic Power Systems', status: 'active', terms: { priceEur: 3_100, paymentTermsDays: 45 }, startDate: '2022-01-01', endDate: '2028-12-31', signedDate: '2021-11-30', valueCents: C(2_600), templateKey: null, summary: 'Sole-source supply of Kora hybrid battery/inverter modules. Warranty recovery clause for systematic defects (cost-sharing up to 50%).' }),
@@ -802,7 +824,7 @@ export function buildInitialWorld(seed = DEFAULT_SEED, scenarioKey = 'turnaround
   const meta: GameMeta = {
     id: 'game', companyName: 'Asterion Automotive', ceoName: 'You (CEO)', currentDate: START_DATE, startDate: START_DATE, seed, seq: 0, status: 'active', terminalReason: null,
     boardConfidence: 55, lowConfidenceMeetings: 0, ceoPersonalLiquidCents: C(2.8), ceoPersonalNetWorthCents: C(6.4), sharesOutstanding: 210_000_000, sharePriceCents: eur(11.2),
-    creditRating: 'BB', ratingOutlook: 'negative', marketingMonthlyCents: C(8), gaMonthlyCents: C(6), sustainingCapexMonthlyCents: C(20), taxLossCarryforwardCents: 0, taxAccruedYtdCents: 0,
+    creditRating: 'BB', ratingOutlook: 'negative', campaigns: [], marketingEfficiency: 1, initiativeLog: {}, marketingMonthlyCents: C(8), gaMonthlyCents: C(6), sustainingCapexMonthlyCents: C(20), taxLossCarryforwardCents: 0, taxAccruedYtdCents: 0,
     co2ProvisionYtdCents: 0, co2UnitsYtd: 0, co2GramsYtd: 0, aftersalesParc: 2_200_000, wageIndex: 1, mtdByAccount: {}, ytdByAccount: {}, cfMtd: {},
     boardPlan: { eonSopDate: '2027-10-01', ebitTargetCents: C(210), minLiquidityCents: C(700), fiscalYear: 2027 },
     nextBoardMeeting: fourthThursday(2027, 1), extraordinaryMeeting: null, lastForecastSummary: null, liquidityStressDays: 0, missedPaymentDays: 0,

@@ -140,7 +140,7 @@ async function main() {
       const c = pick(w.characters.filter((x) => x.active));
       const conv = startConversation(db, c.id);
       await sendMessage(db, llm, conv.id, pick(['How do we stand?', 'I promise you an answer by next month.', 'Let us revamp the Vela with the hybrid.', 'Hire 300 people at Brno.', 'Send me your view on liquidity.']));
-      shareDocument(db, { docKey: pick(DOCUMENT_TYPES.filter((t) => !t.param && t.key !== 'memo')).key, recipientIds: [c.id], conversationId: conv.id });
+      shareDocument(db, { reports: [{ key: pick(DOCUMENT_TYPES.filter((t) => !('param' in t && t.param) && t.key !== 'memo' && t.key !== 'board_proposal')).key }], recipientIds: [c.id], conversationId: conv.id });
       await askGuide(db, llm, pick(['How do I hire more people?', 'board rejected', 'how to negotiate']), 'dashboard');
       const neg = w.negotiations.find((x) => x.status === 'open');
       if (neg && rnd() < 0.3) {

@@ -4,6 +4,7 @@
  * (from accumulators such as headcount-days and principal-days), advancing
  * one day at a time or a whole month at once yields identical books.
  */
+import { modelMonthlyDemand } from './demand';
 import type { FinancialSnapshot, SnapshotData } from '../../shared/domain';
 import { addDays, isQuarterEnd, isYearEnd, month, monthKey, quarterKey, year, type SimDate } from '../../shared/dates';
 import { mulDiv, scale, times, type Cents } from '../../shared/money';
@@ -185,6 +186,8 @@ export function closeMonth(w: World): FinancialSnapshot {
     unitsWholesale: r.whs,
     unitsRetail: r.ret,
     headcount: headcount(w),
+    byAccount: { ...w.meta.mtdByAccount },
+    byModel: Object.fromEntries(w.models.filter((m) => m.status !== 'development' || m.productionMtd > 0).map((m) => [m.id, { produced: m.productionMtd, wholesale: m.wholesaleMtd, retail: m.retailMtd, lost: Math.round(m.lostSalesMtd), priceCents: m.netPriceCents, dealerStock: m.dealerStock, fgUnits: m.fgUnits, demand: Math.round(modelMonthlyDemand(w, m, d)) }])),
   };
   const snap: FinancialSnapshot = { id: `M:${mk}`, kind: 'month', period: mk, date: d, data };
   w.snapshots = w.snapshots.filter((s) => s.id !== snap.id);

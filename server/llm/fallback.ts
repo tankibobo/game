@@ -15,6 +15,7 @@ import { PROJECT_TEMPLATES } from '../actions/templates';
 import { NEGOTIATION_TEMPLATES, lastCounter } from '../engine/negotiation';
 import { byId, type World } from '../engine/world';
 import { mentionedEntities } from './context';
+import { REPORT_BY_KEY, reportsOwnedBy } from '../reports/catalog';
 import type { CharacterTurn } from './schemas';
 
 type Proposal = CharacterTurn['proposed_actions'][number];
@@ -192,6 +193,33 @@ function domainFacts(w: World, c: Character, msg: string): string[] {
   return facts.slice(0, 5);
 }
 
+/** Which catalogue reports a message is about (most relevant first). */
+const REPORT_INTENTS: [RegExp, string][] = [
+  [/(losing money|lose money|lost money|where.{0,20}money|p ?& ?l|profit and loss|income statement|break.?even|why .{0,20}(loss|losing)|cost breakdown|break ?down)/, 'pnl'],
+  [/(margin|per car|unit cost|profitab|contribution|each car)/, 'unit_economics'],
+  [/(cash|liquidity|burn)/, 'cash'],
+  [/(forecast|outlook|projection|next (year|months))/, 'forecast'],
+  [/(debt|covenant|leverage|\bbond\b|loan|rating|refinanc)/, 'debt'],
+  [/(market share|competitor|competition|segment|rival)/, 'market'],
+  [/(marketing|campaign|advertis|brand)/, 'marketing'],
+  [/(sales|selling|sold|demand|stock|dealer)/, 'sales'],
+  [/(production|plant|factory|factories|\bline\b|capacity|output|utili[sz]ation)/, 'production'],
+  [/(supplier|supply|battery|component|shortage)/, 'supply'],
+  [/(quality|warranty|defect|recall)/, 'quality'],
+  [/(workforce|headcount|staff|people|employees|morale|hiring|surplus)/, 'workforce'],
+  [/(project|portfolio|engineers)/, 'projects'],
+  [/(co2|co₂|emission|euro ?7)/, 'co2'],
+  [/(contract|agreement|obligation|legal|sign)/, 'contracts'],
+  [/(profit|loss|earn|costs?\b|result|financ)/, 'pnl'],
+];
+
+export function reportIntents(msg: string): string[] {
+  const t = msg.toLowerCase();
+  const out: string[] = [];
+  for (const [re, key] of REPORT_INTENTS) if (re.test(t) && !out.includes(key)) out.push(key);
+  return out;
+}
+
 export function fallbackTurn(w: World, c: Character, msg: string, summary: string): CharacterTurn {
   const stance = stanceFor(c, w, msg);
   const { proposals, notes } = detectProposals(w, msg, c);
@@ -213,6 +241,24 @@ export function fallbackTurn(w: World, c: Character, msg: string, summary: strin
   if (c.org === 'supplier' && /(volume|capacity|price|prepay)/.test(t)) parts.push('If you want capacity, make us an offer in the negotiation. Our line will not finance itself.');
   const commitments = detectCommitments(w, msg, c.id);
   if (commitments.length) parts.push('I will hold you to that.');
+  // Reports: attach the ones this person produces that the question is about; circulate them when asked.
+  const owned = c.org === 'asterion' ? reportsOwnedBy(c.id).map((r) => r.key) : [];
+  const wanted = reportIntents(msg).filter((k) => owned.includes(k)).slice(0, 2);
+  const asksData = /(\?|how|what|why|show|report|numbers|figures|data|analy|explain|break)/i.test(msg);
+  const attach = asksData ? wanted : [];
+  if (attach.length) parts.push(`I have attached the ${attach.map((k) => `“${REPORT_BY_KEY.get(k)?.title}”`).join(' and ')} with the current figures.`);
+  const share_reports: CharacterTurn['share_reports'] = [];
+  if (/(send|share|forward|circulate|copy)\b.{0,80}\bto\b/i.test(msg) && owned.length) {
+    const recipients = w.characters.filter((x) => x.active && x.id !== c.id && (x.org === 'asterion' || x.org === 'board') && msg.toLowerCase().includes(x.name.split(' ').pop()!.toLowerCase())).map((x) => x.id);
+    const key = wanted[0] ?? owned[0];
+    if (recipients.length) {
+      share_reports.push({ report: key, recipient_ids: recipients, note: 'Sent at the CEO’s request.' });
+      parts.push(`I will send the “${REPORT_BY_KEY.get(key)?.title}” to ${recipients.map((id) => byId(w.characters, id)?.name).join(', ')} right away.`);
+    }
+  }
+  const outsideScope = reportIntents(msg).filter((k) => !owned.includes(k));
+  const request_reports: CharacterTurn['request_reports'] = c.org === 'asterion' && asksData && !attach.length && outsideScope.length ? [{ report: outsideScope[0], reason: `I would need the ${REPORT_BY_KEY.get(outsideScope[0])?.title ?? outsideScope[0]} to answer that properly.` }] : [];
+  if (request_reports.length) parts.push(`That is not my department's data — send me the ${REPORT_BY_KEY.get(request_reports[0].report)?.title} and I will give you my view.`);
   const dialogue = parts.join(' ');
   const trust = commitments.length ? 1 : stance === 'opposed' ? -1 : 0;
   return {
@@ -227,6 +273,9 @@ export function fallbackTurn(w: World, c: Character, msg: string, summary: strin
     trust_delta: trust,
     trust_reason: commitments.length ? 'The CEO made an explicit commitment.' : stance === 'opposed' ? 'Disagreement with the CEO’s instruction.' : 'Routine exchange.',
     follow_up_questions: proposals.length ? ['Do you want me to proceed on that basis?'] : [],
+    attach_reports: attach,
+    request_reports,
+    share_reports,
     summary_update: `${summary ? `${summary} ` : ''}${fmtDate(w.meta.currentDate)}: CEO — “${msg.slice(0, 140)}”. ${c.name.split(' ').pop()} (${stance})${proposals.length ? ` proposed ${proposals.map((p) => p.type).join(', ')}` : ''}.`.slice(-1100),
   };
 }

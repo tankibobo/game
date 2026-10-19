@@ -5,9 +5,11 @@ import { fmtEur, mEur, scale } from '../../../shared/money';
 import { bal, post } from '../../engine/ledger';
 import { engineeringFreeFte, liquidity } from '../../engine/metrics';
 import { RULES } from '../../engine/params';
-import { applyProjectEffects, effectiveFte, forecastProject, milestonesOf, resolveIssue } from '../../engine/projects';
-import { adjustTrust, byId, clamp, emit, nextId, recordHistory, remember, type World } from '../../engine/world';
+import { applyProjectEffects, applyReaction, effectiveFte, forecastProject, milestonesOf, resolveIssue } from '../../engine/projects';
+import { adjustTrust, byId, clamp, emit, inbox, nextId, recordHistory, remember, type World } from '../../engine/world';
 import { PROJECT_TEMPLATES, buildProject, templateByKey } from '../templates';
+import { CUSTOM_KINDS, CUSTOM_KIND_BY_KEY, customTemplate, validateCustom, type CustomSize } from '../custom';
+import { describeEffect } from '../../reports/catalog';
 import { meetingForSubmission } from '../../engine/board';
 import { ok, type ActionDef } from '../types';
 
@@ -57,6 +59,7 @@ export const approveProject: ActionDef<{ projectId: string }> = {
     if (first && first.status === 'pending') first.status = 'in_progress';
     recordHistory(w, { projectId: pr.id, field: 'status', oldValue: 'proposed', newValue: 'active', reason: 'Approved', actionId: ctx.actionId });
     adjustTrust(w, pr.sponsorId, 3);
+    for (const r of (pr.templateKey ? templateByKey(pr.templateKey)?.reactions?.onStart : undefined) ?? []) applyReaction(w, r, pr.id);
     emit(w, { type: 'project_approved', category: 'project', severity: 'notice', title: `${pr.name} approved`, description: `Budget ${fmtEur(pr.budgetCents)}, ${pr.staffingFte} FTE, target ${pr.targetDate}.`, causeKind: 'player_action', source: 'action', actionId: ctx.actionId, entities: [{ type: 'project', id: pr.id }] });
     return { summary: 'Project approved', details: [] };
   },
@@ -105,6 +108,8 @@ export const startProject: ActionDef<{ templateKey: string }> = {
     if (!t) return { errors: [`Unknown project template "${p.templateKey}".`], warnings: [] };
     const v = ok();
     const underWay = (key: string) => w.projects.some((x) => x.templateKey === key && !['cancelled', 'completed', 'proposed'].includes(x.status));
+    const done = w.projects.find((x) => x.templateKey === t.key && x.status === 'completed');
+    if (done && !t.repeatable) v.errors.push(`${t.name} was completed on ${done.completedDate}; its effects are already in place.`);
     if (w.projects.some((x) => x.templateKey === t.key && !['cancelled', 'completed'].includes(x.status))) v.errors.push(`${t.name} is already ${w.projects.find((x) => x.templateKey === t.key && !['cancelled', 'completed'].includes(x.status))?.status === 'proposed' ? 'proposed — approve it on the Projects page' : 'under way'}.`);
     const why = t.available?.({ hasActive: underWay, modelStatus: (id) => byId(w.models, id)?.status });
     if (why) v.errors.push(why);
@@ -156,7 +161,63 @@ export const startProject: ActionDef<{ templateKey: string }> = {
     planToForecast(w, project);
     recordHistory(w, { projectId: id, field: 'status', oldValue: null, newValue: 'active', reason: `Started from template ${t.key}`, actionId: ctx.actionId });
     adjustTrust(w, t.sponsorId, 2);
+    for (const r of t.reactions?.onStart ?? []) applyReaction(w, r, id);
     emit(w, { type: 'project_started', category: 'project', severity: 'notice', title: `${t.name} started`, description: `Budget ${fmtEur(t.budgetCents)}, ${t.fte} FTE, target ${project.targetDate}.`, causeKind: 'player_action', source: 'action', actionId: ctx.actionId, entities: [{ type: 'project', id }] });
+    return { summary: 'Project started', details: [id], result: { projectId: id } };
+  },
+};
+
+type CustomPayload = { name: string; kind: string; targetId?: string | null; size: CustomSize; reason?: string };
+
+export const startCustomProject: ActionDef<CustomPayload> = {
+  type: 'start_custom_project',
+  label: 'Start your own project',
+  description: `Design a project: kind (${CUSTOM_KINDS.map((k) => k.key).join(', ')}), target (plant, line or model where needed) and size (small/medium/large). The engine sizes budget, engineers and duration and sets the expected effect; the actual result is 60–120% of it.`,
+  llmProposable: true,
+  affectsForecast: true,
+  amountCents: (w, p) => (CUSTOM_KIND_BY_KEY.get(p.kind) ? customTemplate(w, { ...p, targetId: p.targetId ?? null }).budgetCents : 0),
+  schema: z.object({ name: z.string().max(80).default(''), kind: z.string(), targetId: z.string().nullable().optional(), size: z.enum(['small', 'medium', 'large']), reason: z.string().max(300).optional() }),
+  validate: (w, p) => {
+    const errs = validateCustom(w, { ...p, targetId: p.targetId ?? null });
+    if (errs.length) return { errors: errs, warnings: [] };
+    const t = customTemplate(w, { ...p, targetId: p.targetId ?? null });
+    const v = ok();
+    const free = engineeringFreeFte(w);
+    if (t.fte > free) v.errors.push(`Needs ${t.fte} engineers; only ${Math.max(0, Math.floor(free))} are free. Choose a smaller size, hire engineers (≈90 days) or release staff from another project.`);
+    return v;
+  },
+  preview: (w, p) => {
+    const t = customTemplate(w, { ...p, targetId: p.targetId ?? null });
+    const viaBoard = t.budgetCents > RULES.ceoSpendLimitCents;
+    const fc = templateForecast(w, t);
+    return {
+      summary: `Start your project: ${t.name}`,
+      consequences: [
+        { label: `Forecast completion ${fc.p50 ?? 'n/a'} (estimate)`, kind: 'operational' },
+        { label: 'Budget', amountCents: -t.budgetCents, timing: `over ~${Math.round(t.durationDays / 30)} months`, kind: 'cash' },
+        { label: `${t.fte} engineers allocated`, kind: 'people' },
+        ...t.effects.map((e) => ({ label: `Expected: ${describeEffect(w, e)}`, kind: 'info' as const })),
+        ...t.risks.map((r) => ({ label: r.text, kind: 'risk' as const })),
+      ],
+      approvals: viaBoard ? [{ approver: 'board', reason: `Budget ${fmtEur(t.budgetCents)} exceeds the CEO limit of ${fmtEur(RULES.ceoSpendLimitCents)}.` }] : [],
+    };
+  },
+  boardAnalysis: (w, p) => {
+    const t = customTemplate(w, { ...p, targetId: p.targetId ?? null });
+    return projectAnalysis(w, t.budgetCents, { kind: t.kind, linkedModelId: t.linkedModelId, templateKey: t.key, effects: t.effects, priority: t.priority });
+  },
+  commit: (w, p, ctx) => {
+    const spec = { ...p, targetId: p.targetId ?? null };
+    const t = customTemplate(w, spec);
+    const id = nextId(w, 'PRJ');
+    const { project, milestones } = buildProject(t, id, w.meta.currentDate, t.milestones.map(() => nextId(w, 'MS')));
+    project.custom = { kind: p.kind, targetId: spec.targetId, size: p.size, outcome: null };
+    w.projects.push(project);
+    w.milestones.push(...milestones);
+    planToForecast(w, project);
+    recordHistory(w, { projectId: id, field: 'status', oldValue: null, newValue: 'active', reason: `Your own project (${p.kind}, ${p.size})`, actionId: ctx.actionId });
+    adjustTrust(w, t.sponsorId, 2);
+    emit(w, { type: 'project_started', category: 'project', severity: 'notice', title: `${t.name} started`, description: `Your own project. Budget ${fmtEur(t.budgetCents)}, ${t.fte} FTE, target ${project.targetDate}.`, causeKind: 'player_action', source: 'action', actionId: ctx.actionId, entities: [{ type: 'project', id }] });
     return { summary: 'Project started', details: [id], result: { projectId: id } };
   },
 };
@@ -410,10 +471,16 @@ export const cancelProject: ActionDef<{ projectId: string; reason: string }> = {
     const writeOff = pr.capitalizeExternal && old !== 'proposed' ? Math.min(pr.externalSpentCents, Math.max(0, bal(w, acct))) : 0;
     if (writeOff > 0) post(w, { description: `Write-off: ${pr.name} cancelled`, sourceType: 'impairment', sourceId: ctx.actionId, lines: [{ account: '6850', amountCents: writeOff }, { account: acct, amountCents: -writeOff }] });
     recordHistory(w, { projectId: pr.id, field: 'status', oldValue: old, newValue: 'cancelled', reason: p.reason, actionId: ctx.actionId });
-    adjustTrust(w, pr.managerId, -6);
-    adjustTrust(w, pr.sponsorId, -4);
+    adjustTrust(w, pr.managerId, old === 'proposed' ? -2 : -6);
+    adjustTrust(w, pr.sponsorId, old === 'proposed' ? -1 : -4);
     const dep = byId(w.departments, pr.departmentId);
-    if (dep) dep.morale = clamp(dep.morale - 5, 0, 100);
+    if (dep && old !== 'proposed') dep.morale = clamp(dep.morale - 5, 0, 100);
+    const mgr = byId(w.characters, pr.managerId);
+    if (mgr && mgr.active) {
+      const done = pr.budgetCents > 0 ? Math.round((pr.spentCents / pr.budgetCents) * 100) : 0;
+      remember(w, { characterId: mgr.id, kind: 'grievance', summary: `The CEO cancelled ${pr.name}${old === 'proposed' ? ' before it started' : ` after ${fmtEur(pr.spentCents)} had been spent`}. Reason given: ${p.reason.slice(0, 160)}`, importance: old === 'proposed' ? 2 : 4, sentiment: -1, sourceType: 'project', sourceId: pr.id, entityRefs: [{ type: 'project', id: pr.id }] });
+      inbox(w, { kind: 'letter', fromId: mgr.id, subject: `${pr.name} cancelled`, body: old === 'proposed' ? `Understood — we will not pursue ${pr.name}. For the record, the team thought it was worth doing; if circumstances change I would like to bring it back.` : `I have told the team that ${pr.name} is stopped. ${Math.round(pr.staffingFte)} engineers go back to the pool and ${fmtEur(pr.spentCents)} (${done}% of the budget) has been spent for nothing we can use${writeOff ? ` — ${fmtEur(writeOff)} is written off` : ''}. People put a lot into this; morale in ${dep?.name ?? 'the team'} will take a knock. I hope the reason is worth it.`, priority: 'normal', linked: [{ type: 'project', id: pr.id }] });
+    }
     if (pr.linkedModelId) {
       const m = byId(w.models, pr.linkedModelId);
       if (m && m.status === 'development') m.status = 'discontinued';

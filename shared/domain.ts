@@ -116,6 +116,12 @@ export interface GameMeta {
   /** End of the CEO's mandate; the board's final review happens on this date. */
   termEndDate: SimDate;
   mandate: MandateResult | null;
+  /** Targeted marketing campaigns (running and past). */
+  campaigns: Campaign[];
+  /** Multiplier on how much demand a marketing euro buys (digital/CRM projects raise it). */
+  marketingEfficiency: number;
+  /** When each kind of initiative (report, proposal, reaction) last fired — keeps employees from repeating themselves. */
+  initiativeLog: Record<string, string>;
   forecastStale: number;
   /** Utility penalty/bonus of Asterion's distribution network vs incumbents. */
   distributionUtility: number;
@@ -228,6 +234,8 @@ export interface VehicleModel {
   demandModifierUntil: SimDate | null;
   projectId: Id | null;
   description: string;
+  /** Equipment and selling points customers see (changed by completed projects). */
+  features: string[];
 }
 
 export interface Competitor {
@@ -346,7 +354,7 @@ export interface Department {
   description: string;
 }
 
-export type CharacterOrg = 'asterion' | 'board' | 'union' | 'bank' | 'supplier' | 'regulator' | 'dealer' | 'investor' | 'competitor';
+export type CharacterOrg = 'asterion' | 'board' | 'union' | 'bank' | 'supplier' | 'regulator' | 'dealer' | 'investor' | 'competitor' | 'customer';
 
 export interface Authority {
   spendLimitCents: Cents;
@@ -438,7 +446,37 @@ export type ProjectEffect =
   | { type: 'segment_ref_price_pct'; segmentId: Id; modelId: Id; pct: number }
   | { type: 'warranty_pct'; pct: number }
   | { type: 'model_euro7'; modelId: Id }
-  | { type: 'distribution'; delta: number };
+  | { type: 'distribution'; delta: number }
+  | { type: 'marketing_efficiency'; pct: number }
+  | { type: 'morale'; departmentId: Id | '*'; delta: number }
+  | { type: 'material_pct'; modelId: Id | '*'; pct: number }
+  | { type: 'absenteeism'; factoryId: Id | '*'; delta: number }
+  | { type: 'trust'; characterId: Id; delta: number }
+  | { type: 'model_feature'; modelId: Id | '*'; feature: string };
+
+/** A project the CEO designed (rather than one from the catalogue). */
+export interface CustomProjectSpec {
+  kind: string;
+  targetId: string | null;
+  size: 'small' | 'medium' | 'large';
+  /** The realised share of the expected effect (drawn at completion; 0.6–1.2). */
+  outcome: number | null;
+}
+
+/** A targeted marketing campaign. */
+export interface Campaign {
+  id: Id;
+  name: string;
+  modelId: Id;
+  start: SimDate;
+  end: SimDate;
+  spendCents: Cents;
+  /** Demand multiplier while it runs (e.g. 1.12). */
+  uplift: number;
+  extraUnits: number;
+  extraContributionCents: Cents;
+  actionId: Id | null;
+}
 
 export interface ProjectRisk {
   text: string;
@@ -483,6 +521,10 @@ export interface Project {
   lastDecision: string | null;
   completedDate: SimDate | null;
   description: string;
+  /** What completion changed, measured (before → after), written when the project completes. */
+  impact: string[];
+  /** Set for projects the CEO designed. */
+  custom: CustomProjectSpec | null;
 }
 
 export type Gate =
@@ -720,6 +762,8 @@ export interface Contract {
   templateKey: string | null;
   obligations: { text: string; dueDate: SimDate | null; status: 'open' | 'met' | 'breached' }[];
   summary: string;
+  /** When the agreement in principle was reached (unsigned agreements lapse after a while). */
+  agreedDate: SimDate | null;
 }
 
 export interface NegotiationTerm {
@@ -900,6 +944,8 @@ export interface InboxItem {
   priority: 'low' | 'normal' | 'high' | 'urgent';
   read: number;
   linked: EntityRef[];
+  /** Shared documents (reports) attached to the message. */
+  attachments?: string[];
 }
 
 export interface FinancialSnapshot {
@@ -934,6 +980,10 @@ export interface SnapshotData {
   unitsWholesale: number;
   unitsRetail: number;
   headcount: number;
+  /** The month's P&L movements by account (debit-positive); absent for pre-game history. */
+  byAccount?: Record<string, Cents>;
+  /** Per-model volumes and prices for the month; absent for pre-game history. */
+  byModel?: Record<string, { produced: number; wholesale: number; retail: number; lost: number; priceCents: Cents; dealerStock: number; fgUnits: number; demand: number }>;
 }
 
 export interface Forecast {
@@ -1000,7 +1050,7 @@ export interface ActionRecord {
   idempotencyKey: string;
   type: string;
   actorId: Id;
-  source: 'player' | 'llm_proposal' | 'system';
+  source: 'player' | 'llm_proposal' | 'system' | 'initiative';
   payload: Record<string, unknown>;
   status: ActionStatus;
   simDate: SimDate;

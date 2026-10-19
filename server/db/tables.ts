@@ -42,7 +42,7 @@ export const WORLD_TABLES: TableSpec[] = [
       mtdByAccount:json, ytdByAccount:json, cfMtd:json, boardPlan:json, nextBoardMeeting:text, extraordinaryMeeting:text?, lastForecastSummary:json?,
       liquidityStressDays:integer, missedPaymentDays:integer, legacyDepMonthlyCents:integer, newPpeGrossCents:integer, amortizingDevCents:integer,
       forecastStale:integer, distributionUtility:real, leaseMonthlyCents:integer, assetsSold:json, version:integer,
-      scenarioKey:text, difficulty:text, termEndDate:text, mandate:json?`),
+      scenarioKey:text, difficulty:text, termEndDate:text, mandate:json?, campaigns:json, marketingEfficiency:real, initiativeLog:json`),
   },
   {
     table: 'macro_state',
@@ -62,7 +62,7 @@ export const WORLD_TABLES: TableSpec[] = [
       baseAppeal:real, appealDecayPerYear:real, quality:real, satisfaction:real, co2Gkm:real, otherMaterialCostCents:integer, logisticsPerUnitCents:integer, warrantyPerUnitCents:integer,
       fgUnits:integer, fgValueCents:integer, dealerStock:integer, backlog:integer, inTransit:integer, retailMtd:integer, wholesaleMtd:integer, productionMtd:integer,
       retailLastMonth:integer, wholesaleLastMonth:integer, productionLastMonth:integer, lostSalesMtd:integer, cumulativeRetail:integer, fgUnitDaysMtd:integer, euro7Compliant:integer,
-      demandModifier:real, demandModifierUntil:text?, projectId:text?, description:text`),
+      demandModifier:real, demandModifierUntil:text?, projectId:text?, description:text, features:json`),
   },
   {
     table: 'competitors',
@@ -116,7 +116,7 @@ export const WORLD_TABLES: TableSpec[] = [
     columns: T(`id:text, code:text, name:text, kind:text, objective:text, scope:text, sponsorId:text, managerId:text, departmentId:text, status:text, priority:text, startDate:text,
       originalTargetDate:text, targetDate:text, forecastDate:text?, forecastP80Date:text?, budgetCents:integer, originalBudgetCents:integer, spentCents:integer, externalSpentCents:integer,
       internalCostCents:integer, committedCents:integer, staffingFte:real, baseFte:real, productivity:real, capitalizeExternal:integer, externalAccrualCents:integer, acceptanceCriteria:json,
-      dependencies:json, linkedModelId:text?, templateKey:text?, completionEffects:json, risks:json, lastDecision:text?, completedDate:text?, description:text`),
+      dependencies:json, linkedModelId:text?, templateKey:text?, completionEffects:json, risks:json, lastDecision:text?, completedDate:text?, description:text, impact:json, custom:json?`),
   },
   {
     table: 'milestones',
@@ -160,7 +160,7 @@ export const WORLD_TABLES: TableSpec[] = [
   {
     table: 'contracts',
     worldKey: 'contracts',
-    columns: T(`id:text, kind:text, title:text, counterpartyId:text?, counterpartyName:text, status:text, terms:json, startDate:text?, endDate:text?, signedDate:text?, valueCents:integer, amendmentOf:text?, negotiationId:text?, templateKey:text?, obligations:json, summary:text`),
+    columns: T(`id:text, kind:text, title:text, counterpartyId:text?, counterpartyName:text, status:text, terms:json, startDate:text?, endDate:text?, signedDate:text?, valueCents:integer, amendmentOf:text?, negotiationId:text?, templateKey:text?, obligations:json, summary:text, agreedDate:text?`),
   },
   {
     table: 'negotiations',

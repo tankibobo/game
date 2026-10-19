@@ -80,8 +80,21 @@ export function productUtility(x: UtilityInput, seg: Segment, pref: PowertrainPr
 }
 
 export function marketingUtility(w: World): number {
-  const ratio = Math.max(0.05, w.meta.marketingMonthlyCents / PARAMS.marketingBaselineMonthlyCents);
+  const ratio = Math.max(0.05, (w.meta.marketingMonthlyCents * (w.meta.marketingEfficiency ?? 1)) / PARAMS.marketingBaselineMonthlyCents);
   return PARAMS.marketingElasticity * Math.log(ratio);
+}
+
+/** Demand multiplier from targeted campaigns running for this model on date d. */
+export function campaignUplift(w: World, modelId: string, d: SimDate): number {
+  let k = 1;
+  for (const c of w.meta.campaigns ?? []) if (c.modelId === modelId && d >= c.start && d <= c.end) k *= c.uplift;
+  return k;
+}
+
+/** Uplift a campaign buys: diminishing returns in monthly spend intensity, amplified by marketing efficiency. */
+export function campaignUpliftFor(w: World, spendCents: number, days: number): number {
+  const intensityM = (spendCents / 1e8) * (30 / Math.max(14, days)) * (w.meta.marketingEfficiency ?? 1);
+  return Math.round((1 + 0.07 * Math.log(1 + intensityM / 2)) * 1000) / 1000;
 }
 
 /** Euro 7: after the regulation applies, non-compliant models can no longer be registered. */
@@ -154,7 +167,7 @@ export function modelMonthlyDemand(w: World, m: VehicleModel, d: SimDate): numbe
   const row = rows.find((r) => r.id === m.id);
   if (!row) return 0;
   const mod = m.demandModifierUntil && d <= m.demandModifierUntil ? m.demandModifier : 1;
-  return row.monthlyUnits * mod;
+  return row.monthlyUnits * mod * campaignUplift(w, m.id, d);
 }
 
 export function expectedDailyDemand(w: World, m: VehicleModel, d: SimDate): number {
@@ -176,4 +189,16 @@ export function calibrateOtherUtility(w: World, segId: string, modelId: string, 
   if (otherExp <= 0) throw new Error(`cannot calibrate segment ${segId}: target share too high`);
   seg.otherUtility = Math.log(otherExp);
   return seg.otherUtility;
+}
+
+/** Cars a month still owed on firm fleet orders for a model (spread over their remaining delivery period). */
+export function fleetMonthlyNeed(w: World, modelId: string, d: SimDate): number {
+  let need = 0;
+  for (const k of w.contracts) {
+    if (k.status !== 'active' || !k.templateKey?.startsWith('fleet_') || k.terms.modelId !== modelId) continue;
+    const left = Number(k.terms.units ?? 0) - Number(k.terms.delivered ?? 0);
+    const months = Math.max(1, k.endDate ? diffDays(k.endDate, d) / 30.4 : 1);
+    need += Math.max(0, left) / months;
+  }
+  return need;
 }

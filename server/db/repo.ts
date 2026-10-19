@@ -108,7 +108,7 @@ function appendOutputs(db: DB, w: World): void {
   for (const m of o.memories) insertMemory(mem, m);
   const ph = stmt(db, 'INSERT INTO project_history (id, project_id, date, field, old_value, new_value, reason, action_id) VALUES (?,?,?,?,?,?,?,?)');
   for (const h of o.history) ph.run(h.id, h.projectId, h.date, h.field, h.oldValue, h.newValue, h.reason, h.actionId);
-  const ib = stmt(db, 'INSERT INTO inbox (id, date, kind, from_id, subject, body, priority, read, linked) VALUES (?,?,?,?,?,?,?,?,?)');
+  const ib = stmt(db, 'INSERT INTO inbox (id, date, kind, from_id, subject, body, priority, read, linked, attachments) VALUES (?,?,?,?,?,?,?,?,?,?)');
   for (const i of o.inbox) insertInbox(ib, i);
   const sn = stmt(db, 'INSERT INTO financial_snapshots (id, kind, period, date, data) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data, date=excluded.date');
   for (const s of o.snapshots) sn.run(s.id, s.kind, s.period, s.date, JSON.stringify(s.data));
@@ -140,7 +140,7 @@ function insertMemory(s: Stmt, m: CharacterMemory) {
 }
 
 function insertInbox(s: Stmt, i: InboxItem) {
-  s.run(i.id, i.date, i.kind, i.fromId, i.subject, i.body, i.priority, i.read, JSON.stringify(i.linked));
+  s.run(i.id, i.date, i.kind, i.fromId, i.subject, i.body, i.priority, i.read, JSON.stringify(i.linked), JSON.stringify(i.attachments ?? []));
 }
 
 /** Create a brand-new game in an empty (migrated) database. */
@@ -169,7 +169,7 @@ export function rowToEvent(r: Row): GameEvent {
   return parseJsonCols<GameEvent>(r, ['cause', 'entities', 'consequences', 'follow_ups']);
 }
 export function rowToInbox(r: Row): InboxItem {
-  return parseJsonCols<InboxItem>(r, ['linked']);
+  return parseJsonCols<InboxItem>(r, ['linked', 'attachments']);
 }
 export function rowToMemory(r: Row): CharacterMemory {
   return parseJsonCols<CharacterMemory>(r, ['entity_refs']);

@@ -44,6 +44,9 @@ export const CharacterTurnSchema = z.object({
   trust_reason: text(300),
   follow_up_questions: list(text(300), 3),
   summary_update: text(1200),
+  attach_reports: list(text(80), 3),
+  request_reports: list(z.object({ report: text(80), reason: text(300) }), 2),
+  share_reports: list(z.object({ report: text(80), recipient_ids: list(text(40), 6), note: text(400) }), 2),
 });
 export type CharacterTurn = z.infer<typeof CharacterTurnSchema>;
 
@@ -68,6 +71,9 @@ export const CHARACTER_TURN_JSON_SCHEMA = obj({
   trust_reason: str,
   follow_up_questions: strArr,
   summary_update: { type: 'string', description: 'Updated running summary of this conversation (≤ 1,000 characters), facts and agreements first.' },
+  attach_reports: { type: 'array', items: str, description: 'Reports from YOUR REPORTS (by key, e.g. "pnl" or "project:PRJ-EON") to attach to this answer so the CEO sees the figures and charts. Attach when you give numbers or analysis. Empty if none.' },
+  request_reports: { type: 'array', description: 'Reports you need from the CEO to answer well (keys from the REPORT CATALOGUE only). Empty if none.', items: obj({ report: str, reason: str }) },
+  share_reports: { type: 'array', description: 'Only when the CEO asks you to: send one of YOUR REPORTS to colleagues (their character IDs). Empty otherwise.', items: obj({ report: str, recipient_ids: strArr, note: str }) },
 });
 
 export const ArgumentAssessmentSchema = z.object({

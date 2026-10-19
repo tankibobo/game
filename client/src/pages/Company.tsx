@@ -28,7 +28,7 @@ export function Company() {
   }, [nav.param]);
   if (!d) return <Loading error={error} />;
   const chars = d.characters as any[];
-  const groups: [string, string][] = [['asterion', 'Executive team'], ['board', 'Board of directors'], ['union', 'Unions'], ['bank', 'Lenders'], ['supplier', 'Suppliers'], ['dealer', 'Dealers'], ['regulator', 'Regulators'], ['investor', 'Rating agencies & investors']];
+  const groups: [string, string][] = [['asterion', 'Executive team'], ['board', 'Board of directors'], ['union', 'Unions'], ['bank', 'Lenders'], ['supplier', 'Suppliers'], ['dealer', 'Dealers'], ['regulator', 'Regulators'], ['investor', 'Rating agencies & investors'], ['customer', 'Customers'], ['competitor', 'Partners & competitors']];
   const c = chars.find((x) => x.id === sel);
   const name = (id: string) => (id === 'ceo' ? 'CEO (you)' : chars.find((x) => x.id === id)?.name ?? id);
   return (

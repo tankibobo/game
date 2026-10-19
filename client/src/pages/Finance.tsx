@@ -4,8 +4,10 @@ import { BarSeriesChart, LineSeriesChart } from '../components/charts';
 import { Card, D, Empty, Est, Loading, Status, Tabs } from '../components/ui';
 import { useGame, useView } from '../ctx';
 import { eurM, fmtDate, fmtEur, fmtInt, fmtX, titleCase } from '../format';
+import { ReportView } from '../components/ReportView';
+import type { Report } from '../../../shared/report';
 
-type Tab = 'statements' | 'forecast' | 'debt' | 'financing' | 'wc';
+type Tab = 'money' | 'statements' | 'forecast' | 'debt' | 'financing' | 'wc';
 
 function lastDay(ym: string) {
   const [y, m] = ym.split('-').map(Number);
@@ -356,12 +358,35 @@ function WorkingCapital({ fin }: { fin: any }) {
   );
 }
 
+/** One report fetched live from the report catalogue. */
+export function LiveReport({ reportKey, param, compact }: { reportKey: string; param?: string; compact?: boolean }) {
+  const { data, error } = useView<Report>(`/reports/${reportKey}${param ? `?param=${encodeURIComponent(param)}` : ''}`);
+  if (error) return <div className="small muted">{error}</div>;
+  if (!data) return <Loading />;
+  return <ReportView report={data} compact={compact} />;
+}
+
+function WhereMoneyGoes() {
+  const { openAsk } = useGame();
+  return (
+    <div className="stack">
+      <div className="callout small">Everything below is computed from the books and the plants as of today. To discuss it, <a href="#" onClick={(e) => { e.preventDefault(); openAsk('CHR-HOLM', 'Why are we making (or losing) money, and what would change it most?'); }}>ask the CFO</a>.</div>
+      <Card><LiveReport reportKey="pnl" /></Card>
+      <div className="grid g2">
+        <Card><LiveReport reportKey="unit_economics" compact /></Card>
+        <Card><LiveReport reportKey="cash" compact /></Card>
+      </div>
+    </div>
+  );
+}
+
 export function Finance() {
   const { data: fin, error } = useView<any>('/finance');
   const { nav } = useGame();
-  const [tab, setTab] = useState<Tab>('statements');
+  const [tab, setTab] = useState<Tab>('money');
   useEffect(() => {
     if (nav.param === 'forecast') setTab('forecast');
+    else if (nav.param === 'statements') setTab('statements');
     else if (nav.param?.startsWith('FIN')) setTab('financing');
     else if (nav.param?.startsWith('DEBT') || nav.param?.startsWith('COV')) setTab('debt');
   }, [nav.param]);
@@ -374,7 +399,8 @@ export function Finance() {
           <p>Double-entry ledger in euro cents. Statements are computed from the journal; forecasts are simulation estimates and are labelled as such.</p>
         </div>
       </div>
-      <Tabs value={tab} onChange={setTab} tabs={[['statements', 'Statements'], ['forecast', 'Forecast & scenarios'], ['debt', 'Debt & covenants'], ['financing', 'Financing'], ['wc', 'Working capital & budget']]} />
+      <Tabs value={tab} onChange={setTab} tabs={[['money', 'Where the money goes'], ['statements', 'Statements'], ['forecast', 'Forecast & scenarios'], ['debt', 'Debt & covenants'], ['financing', 'Financing'], ['wc', 'Working capital & budget']]} />
+      {tab === 'money' && <WhereMoneyGoes />}
       {tab === 'statements' && <Statements fin={fin} />}
       {tab === 'forecast' && <Forecast fin={fin} />}
       {tab === 'debt' && <Debt fin={fin} />}

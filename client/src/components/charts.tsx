@@ -1,4 +1,4 @@
-import { Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 const axis = { stroke: 'var(--axis)', tick: { fill: 'var(--muted)', fontSize: 11 }, tickLine: false };
 
@@ -63,7 +63,7 @@ export function LineSeriesChart({ data, x, series, unit, refY, refLabel, tall }:
   );
 }
 
-export function BarSeriesChart({ data, x, series, unit, tall }: { data: any[]; x: string; series: Series[]; unit?: string; tall?: boolean }) {
+export function BarSeriesChart({ data, x, series, unit, tall, stacked }: { data: any[]; x: string; series: Series[]; unit?: string; tall?: boolean; stacked?: boolean }) {
   return (
     <div>
       <Legend series={series} />
@@ -75,8 +75,8 @@ export function BarSeriesChart({ data, x, series, unit, tall }: { data: any[]; x
             <YAxis {...axis} width={56} tickFormatter={(v) => (unit === '€m' ? `€${Math.round(v).toLocaleString('en-GB')}m` : Math.round(v).toLocaleString('en-GB'))} />
             <Tooltip content={<TT unit={unit} />} cursor={{ fill: 'var(--surface-2)' }} />
             <ReferenceLine y={0} stroke="var(--axis)" />
-            {series.map((s) => (
-              <Bar key={s.key} dataKey={s.key} name={s.label} fill={s.color} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false} />
+            {series.map((s, i) => (
+              <Bar key={s.key} dataKey={s.key} name={s.label} fill={s.color} stackId={stacked ? 'a' : undefined} stroke={stacked ? 'var(--surface)' : undefined} strokeWidth={stacked ? 1 : 0} radius={stacked ? (i === series.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]) : [4, 4, 0, 0]} maxBarSize={stacked ? 34 : 22} isAnimationActive={false} />
             ))}
           </BarChart>
         </ResponsiveContainer>
@@ -102,3 +102,44 @@ export function HBarChart({ data, label, value, unit }: { data: any[]; label: st
 }
 
 export const SERIES = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)'];
+
+/**
+ * Waterfall: each step moves the running total up (income) or down (cost);
+ * subtotal bars are drawn from zero. Bars are range bars [low, high].
+ */
+export function WaterfallChart({ steps, unit }: { steps: { label: string; value: number; total?: boolean }[]; unit?: string }) {
+  let run = 0;
+  const data = steps.map((st) => {
+    if (st.total) {
+      run = st.value;
+      return { label: st.label, range: [Math.min(0, st.value), Math.max(0, st.value)], value: st.value, kind: 'total' };
+    }
+    const from = run;
+    run += st.value;
+    return { label: st.label, range: [Math.min(from, run), Math.max(from, run)], value: st.value, kind: st.value >= 0 ? 'up' : 'down' };
+  });
+  const color = (k: string) => (k === 'total' ? 'var(--series-1)' : k === 'up' ? 'var(--series-3)' : 'var(--series-2)');
+  return (
+    <div>
+      <div className="legend">
+        <span><i style={{ background: 'var(--series-3)' }} />Income</span>
+        <span><i style={{ background: 'var(--series-2)' }} />Cost</span>
+        <span><i style={{ background: 'var(--series-1)' }} />Subtotal</span>
+      </div>
+      <div className="chart tall">
+        <ResponsiveContainer>
+          <BarChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+            <CartesianGrid stroke="var(--grid)" vertical={false} />
+            <XAxis dataKey="label" {...axis} interval={0} angle={-35} textAnchor="end" height={72} />
+            <YAxis {...axis} width={60} tickFormatter={(v) => (unit === '€m' ? `€${Math.round(v).toLocaleString('en-GB')}m` : String(v))} />
+            <Tooltip cursor={{ fill: 'var(--surface-2)' }} content={({ active, payload }: any) => (active && payload?.length ? <div className="tt"><div className="strong">{payload[0].payload.label}</div><div className="num">{payload[0].payload.value > 0 && payload[0].payload.kind !== 'total' ? '+' : ''}{unit === '€m' ? `€${payload[0].payload.value.toLocaleString('en-GB', { maximumFractionDigits: 1 })}m` : payload[0].payload.value}</div></div> : null)} />
+            <ReferenceLine y={0} stroke="var(--axis)" />
+            <Bar dataKey="range" isAnimationActive={false} maxBarSize={30} radius={[3, 3, 3, 3]}>
+              {data.map((d, i) => <Cell key={i} fill={color(d.kind)} />)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}

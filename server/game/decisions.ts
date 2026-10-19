@@ -15,7 +15,7 @@ import { staffingNeed } from '../actions/defs/people';
 import { supersededProposals } from '../actions/defs/projects';
 import { PROJECT_TEMPLATES } from '../actions/templates';
 import { ACTION_BY_TYPE } from '../actions/registry';
-import { actionView } from './game';
+import { actionView, pendingSignatures } from './game';
 
 type Row = Record<string, unknown>;
 
@@ -38,9 +38,11 @@ export function templateStatus(w: ReturnType<typeof loadWorld>, key: string) {
   const free = Math.max(0, Math.floor(engineeringFreeFte(w)));
   const underWay = (k: string) => w.projects.some((x) => x.templateKey === k && !['cancelled', 'completed', 'proposed'].includes(x.status));
   const existing = w.projects.find((x) => x.templateKey === t.key && !['cancelled', 'completed'].includes(x.status));
+  const completed = w.projects.find((x) => x.templateKey === t.key && x.status === 'completed');
+  if (completed && !t.repeatable) return { running: false, completed: completed.completedDate, available: false, reason: `Completed on ${completed.completedDate} — its effects are in place.`, replaces: [], needsBoard: t.budgetCents > RULES.ceoSpendLimitCents };
   const blocker = t.available?.({ hasActive: underWay, modelStatus: (id) => byId(w.models, id)?.status }) ?? null;
   const reason = existing ? (existing.status === 'proposed' ? 'Already proposed — approve it under “Approve a proposed project”.' : `Already under way (${existing.id}).`) : blocker ?? (t.fte > free ? `Needs ${t.fte} free engineers; ${free} are free now. Hire engineers (≈90 days) or reduce staffing on another project.` : null);
-  return { running: !!existing, available: !reason, reason, replaces: supersededProposals(w, t.key).map((p) => p.name), needsBoard: t.budgetCents > RULES.ceoSpendLimitCents };
+  return { running: !!existing, completed: null as string | null, available: !reason, reason, replaces: supersededProposals(w, t.key).map((p) => p.name), needsBoard: t.budgetCents > RULES.ceoSpendLimitCents };
 }
 
 export function decisionsView(db: DB) {
@@ -78,7 +80,9 @@ export function decisionsView(db: DB) {
     inProgress.push({ kind: 'financing', date: f.status === 'offered' ? f.offer?.validUntil ?? null : f.decisionDate, title: `${f.kind.replace(/_/g, ' ')} — ${f.counterparty}`, detail: f.status === 'offered' ? `Offer received: accept it before ${f.offer?.validUntil} (Finance → Financing).` : f.status === 'under_review' ? `Under review by ${f.counterparty}; answer expected ${f.decisionDate ?? 'soon'}.` : f.status.replace(/_/g, ' '), status: f.status, link: { page: 'finance', param: f.id } });
   }
   for (const n of w.negotiations.filter((x) => x.pendingDecision)) inProgress.push({ kind: 'negotiation', date: n.pendingDecision!.date, title: n.title, detail: `Terms agreed at the table; waiting for the ${n.pendingDecision!.approver}'s decision by ${n.pendingDecision!.date}.`, status: 'pending_approval', link: { page: 'inbox', param: n.id } });
-  for (const c of w.contracts.filter((x) => x.status === 'agreed')) inProgress.push({ kind: 'contract', date: null, title: `Sign: ${c.title}`, detail: 'Agreed but not signed — it has no effect until you sign it (Inbox → Contracts).', status: 'agreed', link: { page: 'inbox', param: c.id } });
+  const signing = pendingSignatures(db, w);
+  // A signature already sent to the board appears once, as its board agenda item — not as "to sign".
+  for (const c of w.contracts.filter((x) => x.status === 'agreed' && !signing.has(x.id))) inProgress.push({ kind: 'contract', date: null, title: `Sign: ${c.title}`, detail: 'Agreed but not signed — it has no effect until you sign it (Deals → Contracts).', status: 'agreed', link: { page: 'inbox', param: c.id } });
   for (const p of w.projects.filter((x) => x.status === 'proposed')) {
     const replacement = pending.find((a) => a.type === 'start_project' && (PROJECT_TEMPLATES.find((t) => t.key === a.payload.templateKey)?.supersedes ?? []).includes(p.templateKey ?? ''));
     inProgress.push({ kind: 'project_proposed', date: p.targetDate, title: `Awaiting your approval: ${p.name}`, detail: replacement ? `Proposed project (${p.staffingFte} engineers). It will be withdrawn if “${replacement.summary}” is carried out, which covers the same work.` : `Proposed project (${p.staffingFte} engineers). Nothing happens until you approve it (Projects).`, status: 'proposed', link: { page: 'projects', param: p.id } });
@@ -106,8 +110,8 @@ export function decisionsView(db: DB) {
     issues: w.issues.filter((i) => !['resolved', 'closed'].includes(i.status)).map((i) => ({ id: i.id, title: i.title, severity: i.severity, options: i.options.filter((o) => !i.chosenOptions.includes(o.key)).map((o) => ({ key: o.key, label: o.label, costCents: o.costCents, description: o.description })) })),
     financing: w.financing.filter((f) => !['withdrawn', 'expired'].includes(f.status)).map((f) => ({ id: f.id, kind: f.kind, counterparty: f.counterparty, status: f.status, requestedCents: f.requestedCents, offer: f.offer })),
     negotiations: w.negotiations.map((n) => ({ id: n.id, title: n.title, status: n.status, counterpartyName: byId(w.characters, n.counterpartyId)?.name ?? n.counterpartyId, deadline: n.deadline })),
-    negotiationTemplates: Object.values(NEGOTIATION_TEMPLATES).map((t) => ({ key: t.key, title: t.title, counterpartyName: byId(w.characters, t.counterpartyId)?.name ?? t.counterpartyId, open: w.negotiations.some((n) => n.templateKey === t.key && n.status === 'open'), unavailable: t.available?.(w) ?? null })),
-    contractsToSign: w.contracts.filter((c) => c.status === 'agreed').map((c) => ({ id: c.id, title: c.title, counterpartyName: c.counterpartyName })),
+    negotiationTemplates: Object.values(NEGOTIATION_TEMPLATES).map((t) => ({ key: t.key, title: t.title, description: t.description ?? '', category: t.category ?? 'supply', counterpartyName: byId(w.characters, t.counterpartyId)?.name ?? t.counterpartyId, counterpartyOrg: byId(w.characters, t.counterpartyId)?.orgName ?? '', open: w.negotiations.some((n) => n.templateKey === t.key && n.status === 'open'), unavailable: t.available?.(w) ?? null, terms: t.terms.map((x) => x.label) })),
+    contractsToSign: w.contracts.filter((c) => c.status === 'agreed').map((c) => ({ id: c.id, title: c.title, counterpartyName: c.counterpartyName, pendingNote: signing.get(c.id) ?? null })),
     characters: w.characters.filter((c) => c.active).map((c) => ({ id: c.id, name: c.name, title: c.title, org: c.org })),
     actionTypes: [...ACTION_BY_TYPE.values()].map((a) => ({ type: a.type, label: a.label, description: a.description })),
     drafts,

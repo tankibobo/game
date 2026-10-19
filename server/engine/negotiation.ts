@@ -49,6 +49,10 @@ export interface NegotiationTemplate {
   describe: (terms: Record<string, number>) => string;
   /** Apply the effects of a signed contract to the world. */
   apply: (w: World, terms: Record<string, number>, contract: Contract) => string[];
+  /** What the deal is for, in plain words (shown when choosing a deal to open). */
+  description?: string;
+  /** Grouping in the deal builder. */
+  category?: 'supply' | 'sales' | 'people' | 'partners' | 'dealers';
 }
 
 const pct = (x: number) => `${x.toFixed(1)}%`;
@@ -57,6 +61,8 @@ export const NEGOTIATION_TEMPLATES: Record<string, NegotiationTemplate> = {
   voltaris_supply: {
     key: 'voltaris_supply',
     title: 'Voltaris volume & capacity amendment',
+    description: 'More battery packs a day for the Eon from Voltaris, in exchange for price, a prepayment and a take-or-pay commitment.',
+    category: 'supply',
     counterpartyId: 'CHR-SUND',
     terms: [
       { key: 'dailyVolume', label: 'Guaranteed capacity', unit: 'units_per_day', min: 140, max: 350, step: 10, ceoPrefers: 'high', description: 'Battery packs per working day available from ~120 days after signature.' },
@@ -124,6 +130,8 @@ export const NEGOTIATION_TEMPLATES: Record<string, NegotiationTemplate> = {
   labor_agreement: {
     key: 'labor_agreement',
     title: 'Collective wage agreement 2027–2029',
+    description: 'Wages, a one-off payment and a job guarantee for the plants. A signed agreement brings a peace obligation: no strikes while it runs.',
+    category: 'people',
     counterpartyId: 'CHR-NOVAK',
     terms: [
       { key: 'wageIncreasePct', label: 'Wage increase (year 1)', unit: 'pct', min: 0, max: 8, step: 0.1, ceoPrefers: 'low', description: 'Increase to base pay for all ~18,000 employees from signature.' },
@@ -201,6 +209,8 @@ export const NEGOTIATION_TEMPLATES: Record<string, NegotiationTemplate> = {
   hanseatic_second_source: {
     key: 'hanseatic_second_source',
     title: 'Hanseatic Eon battery-pack second source',
+    description: 'A second supplier of Eon battery packs: resilience and leverage over Voltaris. Packs flow after ~7 months of qualification.',
+    category: 'supply',
     counterpartyId: 'CHR-HARTMANN',
     terms: [
       { key: 'packPriceEur', label: 'Price per pack', unit: 'eur', min: 8_800, max: 10_800, step: 50, ceoPrefers: 'low', description: 'Hanseatic Eon-compatible 77 kWh pack.' },
@@ -240,6 +250,8 @@ export const NEGOTIATION_TEMPLATES: Record<string, NegotiationTemplate> = {
   hanseatic_cost_share: {
     key: 'hanseatic_cost_share',
     title: 'Hanseatic inverter warranty cost-sharing',
+    description: 'Recover part of the Kora inverter field-action cost from the supplier whose part failed.',
+    category: 'supply',
     counterpartyId: 'CHR-HARTMANN',
     terms: [{ key: 'costSharePct', label: 'Hanseatic share of field-action cost', unit: 'pct', min: 0, max: 100, step: 5, ceoPrefers: 'high', description: 'Contract allows up to 50% recovery for systematic defects.' }],
     defaultIdeal: { costSharePct: 15 },
@@ -278,6 +290,8 @@ export const NEGOTIATION_TEMPLATES: Record<string, NegotiationTemplate> = {
   dealer_agreement: {
     key: 'dealer_agreement',
     title: 'Dealer council: Vela stock support & Eon margin',
+    description: 'Pay dealers to clear Vela stock (a temporary sales push) and agree their margin on the Eon. Wins the dealers over.',
+    category: 'dealers',
     counterpartyId: 'CHR-BELLINI',
     terms: [
       { key: 'velaSupportEur', label: 'Vela stock support per unit in dealer stock', unit: 'eur', min: 0, max: 1_500, step: 50, ceoPrefers: 'low', description: 'One-off support paid on current dealer Vela stock (credited against invoices).' },
@@ -323,7 +337,165 @@ export const NEGOTIATION_TEMPLATES: Record<string, NegotiationTemplate> = {
       return out;
     },
   },
+  ...fleetTemplates(),
+
+  contract_assembly: {
+    key: 'contract_assembly',
+    title: 'Contract assembly at Lyon for Shenlong',
+    description: 'Shenlong wants to build cars inside the EU to avoid tariffs. It pays a fee per car assembled at Lyon, using spare Lyon capacity and crews — income and work for Lyon, but it helps a competitor.',
+    category: 'partners',
+    counterpartyId: 'CHR-ZHANG',
+    terms: [
+      { key: 'carsPerDay', label: 'Partner cars per day', unit: 'units_per_day', min: 60, max: 200, step: 10, ceoPrefers: 'high', description: 'Lyon capacity and crews reserved for the partner from ~4 months after signature.' },
+      { key: 'feePerCarEur', label: 'Assembly fee per car', unit: 'eur', min: 1_500, max: 4_200, step: 100, ceoPrefers: 'high', description: 'Paid by Shenlong for each car built (30-day terms).' },
+      { key: 'years', label: 'Term', unit: 'years', min: 1, max: 5, step: 1, ceoPrefers: 'high', description: 'How long the arrangement runs.' },
+    ],
+    defaultIdeal: { carsPerDay: 160, feePerCarEur: 1_900, years: 2 },
+    defaultReservation: { carsPerDay: 80, feePerCarEur: 3_300, years: 4 },
+    weights: { feePerCarEur: 0.6, years: 0.25, carsPerDay: 0.15 },
+    baseThreshold: 0.7,
+    concessionPerRound: 0.08,
+    maxRounds: 6,
+    approvalDays: 14,
+    approvalBody: 'Shenlong Europe board',
+    available: (w) => (!byId(w.characters, 'CHR-ZHANG') ? 'Shenlong is not present in this saved game (start a new game to use this deal).' : w.contracts.some((c) => c.templateKey === 'contract_assembly' && ['active', 'agreed'].includes(c.status)) ? 'A contract-assembly arrangement is already in place.' : null),
+    situation: (w) => {
+      const lyon = byId(w.lines, 'LINE-LYON-VELA');
+      const spare = lyon ? lyon.maxDailyRate - lyon.plannedDailyRate : 0;
+      return spare < 120 ? { adj: 0.05, notes: ['Shenlong doubts Lyon has enough spare capacity.'] } : { adj: -0.03, notes: ['Lyon has plenty of idle capacity — Shenlong knows it can be served well.'] };
+    },
+    contractTitle: 'Shenlong contract-assembly agreement (Lyon)',
+    contractKind: 'service',
+    value: (_w, t) => Math.round(t.carsPerDay * 230 * t.years * t.feePerCarEur * 100),
+    upfrontCents: () => 0,
+    describe: (t) => `${t.carsPerDay} Shenlong cars a day assembled at Lyon for €${t.feePerCarEur.toLocaleString('en-GB')} each, for ${t.years} year${t.years > 1 ? 's' : ''}.`,
+    apply: (w, t, contract) => {
+      const out: string[] = [];
+      const start = addDays(w.meta.currentDate, 120);
+      contract.terms.productionStart = start;
+      contract.startDate = start;
+      contract.endDate = addDays(start, Math.round(t.years * 365));
+      const f = byId(w.factories, 'FAC-LYON');
+      const line = byId(w.lines, 'LINE-LYON-VELA');
+      if (f) f.fixedCrew = Math.round(f.fixedCrew + t.carsPerDay * f.crewPerDailyUnit);
+      if (line) {
+        line.maxDailyRate = Math.max(0, line.maxDailyRate - t.carsPerDay);
+        if (line.plannedDailyRate > line.maxDailyRate) {
+          out.push(`${line.name} planned rate cut from ${line.plannedDailyRate} to ${line.maxDailyRate}/day to make room.`);
+          line.plannedDailyRate = line.maxDailyRate;
+        }
+      }
+      out.push(`Partner production of ${t.carsPerDay}/day starts ${start}: about €${Math.round((t.carsPerDay * 230 * t.feePerCarEur) / 1e6)}m of fees a year; Lyon needs ≈${Math.round(t.carsPerDay * (f?.crewPerDailyUnit ?? 8))} more people on the lines; Vela capacity reduced by ${t.carsPerDay}/day.`);
+      adjustTrust(w, 'CHR-NOVAK', 5);
+      return out;
+    },
+  },
+
+  hanseatic_price: {
+    key: 'hanseatic_price',
+    title: 'Hanseatic hybrid-module price review',
+    description: 'Lower the price of the Kora hybrid battery & inverter module (≈€3,100 per car) in exchange for a longer contract and a volume commitment.',
+    category: 'supply',
+    counterpartyId: 'CHR-HARTMANN',
+    terms: [
+      { key: 'priceCutPct', label: 'Price reduction', unit: 'pct', min: 0, max: 10, step: 0.5, ceoPrefers: 'high', description: 'Reduction on the Kora hybrid module price.' },
+      { key: 'extensionYears', label: 'Contract extension', unit: 'years', min: 0, max: 5, step: 1, ceoPrefers: 'low', description: 'Years added to the supply agreement (sole source).' },
+      { key: 'volumeCommitPct', label: 'Volume commitment', unit: 'pct', min: 50, max: 100, step: 5, ceoPrefers: 'low', description: 'Share of current Kora volume Asterion commits to buy (take-or-pay).' },
+    ],
+    defaultIdeal: { priceCutPct: 1, extensionYears: 5, volumeCommitPct: 95 },
+    defaultReservation: { priceCutPct: 6, extensionYears: 2, volumeCommitPct: 75 },
+    weights: { priceCutPct: 0.55, extensionYears: 0.25, volumeCommitPct: 0.2 },
+    baseThreshold: 0.7,
+    concessionPerRound: 0.08,
+    maxRounds: 6,
+    approvalDays: 7,
+    approvalBody: 'Hanseatic management board',
+    available: (w) => (w.contracts.some((c) => c.templateKey === 'hanseatic_price' && c.status === 'active') ? 'The price review has already been agreed.' : null),
+    situation: (w) => {
+      const iss = byId(w.issues, 'ISS-KORA-INV');
+      return iss && iss.data.rootCause === 'confirmed' ? { adj: -0.05, notes: ['Hanseatic is on the back foot after the inverter fault.'] } : { adj: 0, notes: [] };
+    },
+    contractTitle: 'Hanseatic hybrid-module price amendment',
+    contractKind: 'supply',
+    value: (w, t) => Math.round((byId(w.supplies, 'SPL-HAN-HYB')?.unitPriceCents ?? 0) * (t.priceCutPct / 100) * 13_000 * 12),
+    upfrontCents: () => 0,
+    describe: (t) => `${t.priceCutPct}% off the hybrid module, contract extended by ${t.extensionYears} year${t.extensionYears === 1 ? '' : 's'}, ${t.volumeCommitPct}% volume commitment.`,
+    apply: (w, t) => {
+      const out: string[] = [];
+      const sup = byId(w.supplies, 'SPL-HAN-HYB');
+      if (sup) {
+        const before = sup.unitPriceCents;
+        sup.unitPriceCents = Math.round(before * (1 - t.priceCutPct / 100));
+        out.push(`Kora hybrid module €${Math.round(before / 100).toLocaleString('en-GB')} → €${Math.round(sup.unitPriceCents / 100).toLocaleString('en-GB')} per car.`);
+      }
+      const base = byId(w.contracts, 'CON-HANSEATIC');
+      if (base && base.endDate && t.extensionYears > 0) {
+        base.endDate = addDays(base.endDate, Math.round(t.extensionYears * 365));
+        out.push(`Hanseatic supply agreement extended to ${base.endDate}.`);
+      }
+      return out;
+    },
+  },
 };
+
+/** Fleet sales: one template per model, with a rental & leasing buyer. */
+function fleetTemplates(): Record<string, NegotiationTemplate> {
+  const specs: [string, string, number, number][] = [
+    ['MDL-VELA', 'Vela', 24, 14],
+    ['MDL-KORA', 'Kora', 18, 10],
+    ['MDL-EON', 'Eon', 14, 7],
+  ];
+  const out: Record<string, NegotiationTemplate> = {};
+  for (const [modelId, name, idealDisc, resDisc] of specs) {
+    const key = `fleet_${name.toLowerCase()}`;
+    out[key] = {
+      key,
+      title: `Fleet order: ${name} for EuroFleet Mobility`,
+      description: `Sell a block of ${name}s to a rental & leasing company at a discount. Cars are delivered from factory stock over the agreed months — a way to use capacity or clear stock, at a lower price per car (dealers dislike it).`,
+      category: 'sales',
+      counterpartyId: 'CHR-KRAUS',
+      terms: [
+        { key: 'units', label: 'Cars', unit: 'count', min: 1_000, max: 12_000, step: 500, ceoPrefers: 'high', description: 'Total cars ordered.' },
+        { key: 'discountPct', label: 'Discount on net price', unit: 'pct', min: 4, max: 30, step: 0.5, ceoPrefers: 'low', description: 'Off the dealer net price.' },
+        { key: 'months', label: 'Delivery period', unit: 'months', min: 3, max: 12, step: 1, ceoPrefers: 'low', description: 'Deliveries spread evenly over this period, from factory stock.' },
+      ],
+      defaultIdeal: { units: 3_000, discountPct: idealDisc, months: 12 },
+      defaultReservation: { units: 9_000, discountPct: resDisc, months: 4 },
+      weights: { discountPct: 0.7, units: 0.15, months: 0.15 },
+      baseThreshold: 0.68,
+      concessionPerRound: 0.09,
+      maxRounds: 6,
+      approvalDays: 5,
+      approvalBody: 'EuroFleet procurement committee',
+      available: (w) => {
+        if (!byId(w.characters, 'CHR-KRAUS')) return 'EuroFleet is not present in this saved game (start a new game to use this deal).';
+        if (byId(w.models, modelId)?.status !== 'in_production') return `The ${name} is not on sale.`;
+        if (w.contracts.some((c) => c.templateKey === key && ['active', 'agreed'].includes(c.status))) return `A ${name} fleet order is already running.`;
+        return null;
+      },
+      situation: (w) => {
+        const m = byId(w.models, modelId);
+        const stockDays = m && m.retailLastMonth > 0 ? ((m.dealerStock + m.fgUnits) / m.retailLastMonth) * 30 : 0;
+        return stockDays > 75 ? { adj: 0.04, notes: [`EuroFleet knows ${name} stock is piling up and pushes for a bigger discount.`] } : { adj: 0, notes: [] };
+      },
+      contractTitle: `EuroFleet ${name} fleet order`,
+      contractKind: 'service',
+      value: (w, t) => Math.round((byId(w.models, modelId)?.netPriceCents ?? 0) * (1 - t.discountPct / 100) * t.units),
+      upfrontCents: () => 0,
+      describe: (t) => `${t.units.toLocaleString('en-GB')} ${name}s at ${t.discountPct}% off the net price, delivered over ${t.months} months.`,
+      apply: (w, t, contract) => {
+        const m = byId(w.models, modelId);
+        contract.terms.modelId = modelId;
+        contract.terms.delivered = 0;
+        contract.terms.workingDaysElapsed = 0;
+        contract.endDate = addDays(w.meta.currentDate, Math.round(t.months * 30.4));
+        adjustTrust(w, 'CHR-BELLINI', -2);
+        return [`${t.units.toLocaleString('en-GB')} ${name}s to deliver from factory stock by ${contract.endDate} (≈${Math.ceil(t.units / (t.months * 21.5))} a working day) at €${Math.round(((m?.netPriceCents ?? 0) * (1 - t.discountPct / 100)) / 100).toLocaleString('en-GB')} each. Build them: the lines must produce for the order on top of dealer demand.`];
+      },
+    };
+  }
+  return out;
+}
 
 // ---------------------------------------------------------------- evaluation
 
@@ -497,6 +669,7 @@ export function markAgreed(w: World, n: Negotiation, terms: Record<string, numbe
     templateKey: n.templateKey,
     obligations: [],
     summary: `Agreed in principle (not yet signed): ${tpl.describe(terms)}`,
+    agreedDate: w.meta.currentDate,
   };
   w.contracts.push(contract);
   n.contractId = contract.id;

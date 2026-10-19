@@ -24,6 +24,8 @@ interface Ctx {
   reviewAction: (actionId: string) => void;
   status: any;
   openGuide: (tab?: 'coach' | 'howto') => void;
+  /** Ask someone a quick question (optionally pre-filled). */
+  openAsk: (characterId?: string, question?: string) => void;
 }
 
 const C = createContext<Ctx>(null as unknown as Ctx);

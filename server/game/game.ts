@@ -31,6 +31,7 @@ import { SCENARIO_BY_KEY, scenarioOf } from '../scenario/scenarios';
 import { DIFFICULTIES } from '../engine/difficulty';
 import type { Difficulty } from '../../shared/domain';
 import { addIntroInbox } from '../scenario/intro';
+import { runInitiative } from './initiative';
 
 export class GameError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -198,6 +199,8 @@ export function proposeAction(db: DB, input: ProposeInput, preloaded?: World): A
   }
   base.payload = payload;
   const v = safe(() => def.validate(w, payload, actorId), (e) => ({ errors: [String(e)], warnings: [] }));
+  const dup = duplicateInFlight(db, def.type, payload);
+  if (dup) v.errors.push(dup);
   base.errors = v.errors;
   base.warnings = [...base.warnings, ...v.warnings];
   base.summary = def.label;
@@ -211,6 +214,36 @@ export function proposeAction(db: DB, input: ProposeInput, preloaded?: World): A
   } else base.status = 'invalid';
   insertAction(db, base);
   return base;
+}
+
+/** Payload fields that describe why, not what — ignored when comparing decisions. */
+const NON_DEFINING = new Set(['reason', 'rationale', 'argumentQuality', 'packageAnalysis', 'packageItems']);
+
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
+  if (v && typeof v === 'object') return `{${Object.keys(v as object).filter((k) => !NON_DEFINING.has(k)).sort().map((k) => `${k}:${canonical((v as Record<string, unknown>)[k])}`).join(',')}}`;
+  return JSON.stringify(v);
+}
+
+/** The same decision already sent to the board (or approved and waiting) must not be submitted twice. */
+export function duplicateInFlight(db: DB, type: string, payload: Record<string, unknown>): string | null {
+  if (['negotiate_contract', 'make_promise', 'resolve_commitment', 'share_document'].includes(type)) return null;
+  const key = canonical(payload);
+  const rows = (db.prepare("SELECT * FROM actions WHERE type = ? AND status IN ('pending_approval','approved')").all(type) as Record<string, unknown>[]).map(rowToAction);
+  const hit = rows.find((a) => canonical(a.payload) === key);
+  if (!hit) return null;
+  return hit.status === 'approved' ? `This decision (${hit.summary}) was already approved by the board and is waiting to be carried out — see Decisions → In progress.` : `This decision (${hit.summary}) is already waiting for the board's vote — see Decisions → In progress.`;
+}
+
+/** Contracts whose signature is waiting for the board (or approved and waiting): contractId → note. */
+export function pendingSignatures(db: DB, w: World): Map<string, string> {
+  const out = new Map<string, string>();
+  const rows = (db.prepare("SELECT * FROM actions WHERE type = 'sign_contract' AND status IN ('pending_approval','approved')").all() as Record<string, unknown>[]).map(rowToAction);
+  for (const a of rows) {
+    const bp = w.boardProposals.find((b) => b.status === 'scheduled' && (b.actionId === a.id || (b.actionIds ?? []).includes(a.id)));
+    out.set(String(a.payload.contractId), a.status === 'approved' ? 'Signature approved by the board; it is carried out at the next time advance.' : `Signature submitted to the board — vote on ${bp?.meetingDate ?? 'the next meeting'}. Nothing more to do now.`);
+  }
+  return out;
 }
 
 function safe<T>(fn: () => T, onErr: (e: unknown) => T): T {
@@ -655,6 +688,7 @@ export function advanceTime(db: DB, days: number, idempotencyKey?: string): Adva
     const newYear = from.slice(0, 4) !== w.meta.currentDate.slice(0, 4);
     if ((w.meta.forecastStale || newYear) && w.meta.status === 'active') refreshForecast(w, 'period_close');
     if (newYear && w.meta.status === 'active') setAnnualBudget(w);
+    runInitiative(db, w, from, [...w.out.events], pendingSignatures(db, w));
     const events = [...w.out.events];
     const briefing = buildBriefing(w, from, results, events, cashBefore);
     inbox(w, { kind: 'briefing', fromId: null, subject: briefing.subject, body: briefing.body, priority: events.some((e) => e.severity === 'critical') ? 'high' : 'normal', linked: [] });

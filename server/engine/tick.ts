@@ -20,6 +20,8 @@ import { addDays, isMonthEnd, monthKey, type SimDate } from '../../shared/dates'
 import { fmtEur } from '../../shared/money';
 import { holdBoardMeeting, monthlyConfidence, upcomingMeeting } from './board';
 import { finalReview } from './mandate';
+import { runPartnerDeals } from './partners';
+import { competitorDynamics, updateSharePrice } from './market';
 import { closeMonth } from './close';
 import { processCommitments } from './commitments';
 import { runEvents, scheduledDevelopments, upkeepIssues } from './events';
@@ -70,6 +72,8 @@ export function advanceDay(w: World, hooks: TickHooks = {}): DayResult {
   res.constraints = prod.constraints;
 
   // 4. sales, cash
+  // Firm fleet orders are served from factory stock before dealers' daily orders.
+  runPartnerDeals(w);
   const sales = runSales(w);
   res.retail = sales.retail;
   res.wholesale = sales.wholesale;
@@ -81,6 +85,7 @@ export function advanceDay(w: World, hooks: TickHooks = {}): DayResult {
   processCommitments(w);
   upkeepIssues(w);
   runEvents(w);
+  competitorDynamics(w);
 
   // 8. board
   if (w.mode === 'live' && upcomingMeeting(w) === d) {
@@ -93,6 +98,7 @@ export function advanceDay(w: World, hooks: TickHooks = {}): DayResult {
   if (isMonthEnd(d)) {
     closeMonth(w);
     monthlyConfidence(w);
+    updateSharePrice(w);
     res.closedMonth = monthKey(d);
     w.meta.forecastStale = 1;
   }

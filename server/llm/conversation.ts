@@ -20,6 +20,8 @@ import { adjustTrust, byId, clamp, remember, type World } from '../engine/world'
 import { GameError, confirmAction, proposeAction } from '../game/game';
 import { buildContext, estimateTokens, mentionedEntities } from './context';
 import { ACTION_BY_TYPE } from '../actions/registry';
+import { REPORT_BY_KEY } from '../reports/catalog';
+import { recordDocument, rowToSharedDocument } from '../game/documents';
 import { fallbackNegotiationLine, fallbackTurn } from './fallback';
 import { LlmError, type LlmConfig } from './provider';
 import { ARGUMENT_JSON_SCHEMA, ArgumentAssessmentSchema, CHARACTER_TURN_JSON_SCHEMA, CharacterTurnSchema, parseStructured, type CharacterTurn } from './schemas';
@@ -63,7 +65,8 @@ export function systemPrompt(c: Character): string {
     'Ground every factual statement in the CONTEXT. Distinguish facts, estimates, beliefs and rumours, and say "I don’t know" when the context does not tell you. Never invent numbers, dates, people, contracts or events.',
     'You cannot change the world. Never claim that something happened (a contract signed, money transferred, a milestone completed, an approval granted) unless the context states it as [FACT]. To get something done, propose an action from the ACTION CATALOG; the simulation validates it and the CEO decides.',
     'Your private walk-away limits in any negotiation must never be stated as numbers.',
-    'Only ask the CEO for things listed under WHAT THE CEO CAN DO. Never ask for emails, files or reports outside that list, never offer to send something later, and never imply you can talk to colleagues on the CEO’s behalf. If you need a document, name the shareable document you need.',
+    'Only ask the CEO for things listed under WHAT THE CEO CAN DO. If you need information, request a report from the REPORT CATALOGUE by its key (request_reports); never ask for anything else, and never offer to send something later.',
+    'When you give figures or analysis from your own department, quote YOUR REPORTS precisely and attach the report (attach_reports) so the CEO sees the tables and charts. When the CEO asks you to send something to a colleague, use share_reports with one of your reports.',
     'You know what COMPANY KNOWLEDGE says about decisions, the board agenda and the CEO’s meetings with colleagues; stay consistent with it.',
     'Respond ONLY with JSON matching the provided schema.',
   ].join('\n');
@@ -239,6 +242,9 @@ async function finalizeTurn(db: DB, conv: Conversation, c: Character, turn: Char
   const w = loadWorld(db);
   const claimCheck = checkClaims(w, turn);
   const eventResults: { key: string; accepted: boolean; reason: string }[] = [];
+  const attachments: { key: string; docId: string }[] = [];
+  const reportRequests: { key: string; param: string | null; title: string; reason: string; needsParam: string | null }[] = [];
+  const sharedDocs: { docId: string; title: string; recipients: string[] }[] = [];
   db.transaction(() => {
     const ch = byId(w.characters, c.id)!;
     const delta = clamp(turn.trust_delta, -2, 2);
@@ -249,6 +255,39 @@ async function finalizeTurn(db: DB, conv: Conversation, c: Character, turn: Char
     for (const ep of turn.event_proposals.slice(0, 1)) {
       const r = proposeEvent(w, ep.event_key, ep.entity_id, ep.rationale);
       eventResults.push({ key: ep.event_key, ...r });
+    }
+    // Reports: attached to the answer, asked for, or sent on to colleagues (information only).
+    const parseRef = (ref: string) => {
+      const [key, param] = ref.trim().replace(/^"|"$/g, '').split(':');
+      return { key, param: param || null };
+    };
+    const owns = (key: string) => internal && c.org === 'asterion' && !!REPORT_BY_KEY.get(key)?.ownerIds.includes(c.id);
+    for (const ref of turn.attach_reports.slice(0, 3)) {
+      const { key, param } = parseRef(ref);
+      if (!owns(key) || attachments.some((a) => a.key === key)) continue;
+      try {
+        const doc = recordDocument(db, w, { reports: [{ key, param }], recipientIds: ['ceo'], senderId: c.id, conversationId: conv.id, quiet: true });
+        attachments.push({ key, docId: doc.id });
+      } catch {
+        /* report not available (e.g. missing parameter) — the answer stands without it */
+      }
+    }
+    for (const r of turn.request_reports.slice(0, 2)) {
+      const { key, param } = parseRef(r.report);
+      const def = REPORT_BY_KEY.get(key);
+      if (def) reportRequests.push({ key, param, title: def.title, reason: r.reason.slice(0, 300), needsParam: def.param ?? null });
+    }
+    for (const sh of turn.share_reports.slice(0, 2)) {
+      const { key, param } = parseRef(sh.report);
+      if (!owns(key)) continue;
+      const to = sh.recipient_ids.filter((id) => id !== c.id && ['asterion', 'board'].includes(byId(w.characters, id)?.org ?? '') && byId(w.characters, id)?.active);
+      if (!to.length) continue;
+      try {
+        const doc = recordDocument(db, w, { reports: [{ key, param }], memo: sh.note, recipientIds: to, senderId: c.id, conversationId: conv.id });
+        sharedDocs.push({ docId: doc.id, title: doc.title, recipients: to.map((id) => byId(w.characters, id)!.name) });
+      } catch {
+        /* not available */
+      }
     }
     writeWorld(db, w);
     db.prepare('UPDATE conversations SET summary = ?, last_date = ? WHERE id = ?').run(turn.summary_update.slice(0, 1200), w.meta.currentDate, conv.id);
@@ -273,11 +312,33 @@ async function finalizeTurn(db: DB, conv: Conversation, c: Character, turn: Char
       trustDelta: clamp(turn.trust_delta, -2, 2),
       trustReason: turn.trust_reason,
       followUps: turn.follow_up_questions,
+      attachments: attachments.map((a) => a.docId),
+      reportRequests,
+      sharedDocs,
       context: { tokens: ctxTokens, sections: ctxSections },
       ...extra,
     },
   });
   return { playerMessage, reply, actions, mode, fallbackReason };
+}
+
+// ---------------------------------------------------------------- quick questions
+
+/**
+ * Ask someone a quick question without setting up a meeting. Questions to the
+ * same person are kept in one running "Quick questions" thread (which can be
+ * continued as a meeting); the answer comes back with any reports attached.
+ */
+export async function quickQuestion(db: DB, llm: LlmConfig, characterId: string, question: string): Promise<TurnResult & { conversationId: string; documents: ReturnType<typeof rowToSharedDocument>[] }> {
+  const w = loadWorld(db);
+  const c = byId(w.characters, characterId);
+  if (!c || !c.active) throw new GameError('This person is not available.');
+  const row = db.prepare("SELECT * FROM conversations WHERE character_id = ? AND title LIKE 'Quick questions%' ORDER BY created_at DESC LIMIT 1").get(characterId) as Record<string, unknown> | undefined;
+  const conv = row ? rowToConversation(row) : startConversation(db, characterId, `Quick questions — ${c.name}`);
+  const result = await sendMessage(db, llm, conv.id, question);
+  const ids = ((result.reply.structured as { attachments?: string[] } | null)?.attachments ?? []);
+  const documents = ids.length ? (db.prepare(`SELECT * FROM shared_documents WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids) as Record<string, unknown>[]).map(rowToSharedDocument) : [];
+  return { ...result, conversationId: conv.id, documents };
 }
 
 // ---------------------------------------------------------------- negotiation offers

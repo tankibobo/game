@@ -23,6 +23,8 @@ import { mandateObjectives, mandateScore } from '../engine/mandate';
 import { ACTIONS } from '../actions/registry';
 import { PROJECT_TEMPLATES } from '../actions/templates';
 import { templateStatus } from './decisions';
+import { pendingSignatures } from './game';
+import { rowToSharedDocument } from './documents';
 import { unitMaterialCost, FY2026 } from '../scenario/initial';
 
 type Row = Record<string, unknown>;
@@ -264,7 +266,10 @@ export function inboxView(db: DB) {
     conversations: convs,
     commitments: w.commitments,
     negotiations: w.negotiations.map(publicNegotiation),
-    contracts: w.contracts,
+    contracts: (() => {
+      const signing = pendingSignatures(db, w);
+      return w.contracts.map((c) => ({ ...c, pendingNote: signing.get(c.id) ?? null }));
+    })(),
     financing: w.financing,
     boardProposals: w.boardProposals.map((b) => {
       const ids = proposalActionIds(b);
@@ -285,7 +290,10 @@ export function conversationView(db: DB, id: string) {
   const w = loadWorld(db);
   const c = byId(w.characters, conv.characterId);
   const neg = conv.negotiationId ? byId(w.negotiations, conv.negotiationId) : w.negotiations.find((n) => n.counterpartyId === conv.characterId && n.status === 'open');
-  return { conversation: conv, messages: msgs, actions, character: c ? publicCharacter(c) : null, negotiation: neg ? publicNegotiation(neg) : null };
+  // Reports attached to replies (or shared in the meeting), embedded so they render with the message.
+  const ids = [...new Set(msgs.flatMap((m) => ((m.structured as { attachments?: string[] } | null)?.attachments ?? [])))];
+  const documents = ids.length ? (db.prepare(`SELECT * FROM shared_documents WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids) as Row[]).map(rowToSharedDocument) : [];
+  return { conversation: conv, messages: msgs, actions, character: c ? publicCharacter(c) : null, negotiation: neg ? publicNegotiation(neg) : null, documents };
 }
 
 export interface HistoryFilter {

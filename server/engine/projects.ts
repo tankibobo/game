@@ -14,9 +14,11 @@ import type { Gate, Issue, Milestone, Project, ProjectEffect } from '../../share
 import { addDays, diffDays, isWorkingDay, type SimDate } from '../../shared/dates';
 import { scale, type Cents } from '../../shared/money';
 import { engineeringFreeFte } from './metrics';
-import { groupCapacity } from './operations';
+import { groupCapacity, steadyStateCrew } from './operations';
+import { modelMonthlyDemand } from './demand';
+import { templateByKey, type Reaction } from '../actions/templates';
 import { PARAMS } from './params';
-import { adjustTrust, byId, emit, inbox, recordHistory, remember, type World } from './world';
+import { adjustTrust, byId, emit, inbox, recordHistory, remember, rngFor, type World } from './world';
 
 export const ACTIVE_STATUSES = new Set(['active', 'delayed', 'blocked']);
 
@@ -160,12 +162,81 @@ export function completeProject(w: World, p: Project): void {
   p.status = 'completed';
   p.completedDate = d;
   recordHistory(w, { projectId: p.id, field: 'status', oldValue: old, newValue: 'completed', reason: 'All milestones completed.', actionId: null });
-  const effects = applyProjectEffects(w, p.completionEffects);
-  emit(w, { type: 'project_completed', category: 'project', severity: 'notice', title: `${p.name} completed`, description: `${d <= p.targetDate ? 'On time' : `${diffDays(d, p.targetDate)} days late`}. ${effects.join(' ')}`, causeKind: 'causal', entities: [{ type: 'project', id: p.id }], consequences: effects.map((text) => ({ text })) });
+  // Projects the CEO designed deliver a share of the expected effect (drawn once, deterministic per seed).
+  let effects = p.completionEffects;
+  if (p.custom) {
+    if (p.custom.outcome === null) p.custom.outcome = Math.round((0.6 + 0.6 * rngFor(w).u(d, 'custom-outcome', p.id)) * 100) / 100;
+    effects = effects.map((e) => scaleEffect(e, p.custom!.outcome!));
+  }
+  const lines = applyProjectEffects(w, effects);
+  p.impact = lines;
+  const t = p.templateKey ? templateByKey(p.templateKey) : undefined;
+  const outcomeNote = p.custom ? ` The result came in at ${Math.round((p.custom.outcome ?? 1) * 100)}% of what was expected.` : '';
+  emit(w, { type: 'project_completed', category: 'project', severity: 'notice', title: `${p.name} completed`, description: `${d <= p.targetDate ? 'On time' : `${diffDays(d, p.targetDate)} days late`}.${outcomeNote} ${lines.join(' ')}`, causeKind: 'causal', entities: [{ type: 'project', id: p.id }], consequences: lines.map((text) => ({ text })) });
   adjustTrust(w, p.managerId, 3);
   adjustTrust(w, p.sponsorId, 2);
+  // The project manager reports what changed — and what still has to be done to realise it.
+  inbox(w, {
+    kind: 'report',
+    fromId: p.managerId,
+    subject: `Completed: ${p.name}`,
+    body: [`${p.name} is complete${d <= p.targetDate ? ', on time' : `, ${diffDays(d, p.targetDate)} days after target`}. Budget used: €${Math.round(p.spentCents / 1e8)}m of €${Math.round(p.budgetCents / 1e8)}m.${outcomeNote}`, '', 'What changed:', ...lines.map((l) => `• ${l}`), ...(t?.followUp ? ['', `Next: ${t.followUp}`] : [])].join('\n'),
+    priority: 'high',
+    linked: [{ type: 'project', id: p.id }],
+  });
+  for (const r of t?.reactions?.onComplete ?? []) applyReaction(w, r, p.id);
 }
 
+/** A stakeholder reacts to a project: trust, morale and a message to the CEO. */
+export function applyReaction(w: World, r: Reaction, projectId: string): void {
+  const c = byId(w.characters, r.characterId);
+  if (!c || !c.active) return;
+  if (r.trust) adjustTrust(w, c.id, r.trust);
+  if (r.morale) {
+    const dep = byId(w.departments, r.morale.departmentId);
+    if (dep) dep.morale = Math.max(0, Math.min(100, dep.morale + r.morale.delta));
+  }
+  remember(w, { characterId: c.id, kind: r.trust < 0 ? 'grievance' : 'observation', summary: `${r.subject}: ${r.body.slice(0, 220)}`, importance: 3, sentiment: r.trust < 0 ? -1 : r.trust > 0 ? 1 : 0, sourceType: 'project', sourceId: projectId, entityRefs: [{ type: 'project', id: projectId }] });
+  inbox(w, { kind: 'letter', fromId: c.id, subject: r.subject, body: r.body, priority: r.trust < -2 ? 'high' : 'normal', linked: [{ type: 'project', id: projectId }, { type: 'character', id: c.id }] });
+  emit(w, { type: r.trust < 0 ? 'stakeholder_objection' : 'stakeholder_reaction', category: 'people', severity: r.trust < -2 ? 'warning' : 'info', title: `${c.name}: ${r.subject}`, description: r.body.slice(0, 240), causeKind: 'causal', entities: [{ type: 'character', id: c.id }, { type: 'project', id: projectId }] });
+}
+
+function scaleEffect(e: ProjectEffect, k: number): ProjectEffect {
+  switch (e.type) {
+    case 'model_appeal':
+    case 'model_quality':
+    case 'morale':
+    case 'absenteeism':
+    case 'trust':
+      return { ...e, delta: Math.round(e.delta * k * 10) / 10 };
+    case 'line_capacity':
+      return { ...e, delta: Math.round((e.delta * k) / 5) * 5 };
+    case 'model_cost':
+      return { ...e, deltaCents: Math.round(e.deltaCents * k) };
+    case 'factory_overhead_pct':
+    case 'factory_crew_pct':
+    case 'warranty_pct':
+    case 'material_pct':
+    case 'marketing_efficiency':
+      return { ...e, pct: Math.round(e.pct * k * 1000) / 1000 };
+    case 'distribution':
+      return { ...e, delta: Math.round(e.delta * k * 1000) / 1000 };
+    default:
+      return e;
+  }
+}
+
+const eu = (c: number) => `€${Math.round(c / 100).toLocaleString('en-GB')}`;
+const em = (c: number) => `€${(c / 1e8).toFixed(1)}m`;
+const n0 = (x: number) => Math.round(x).toLocaleString('en-GB');
+const onSale = (w: World) => w.models.filter((m) => m.status === 'in_production');
+const demandOf = (w: World, ids?: string[]) => onSale(w).filter((m) => !ids || ids.includes(m.id)).reduce((a, m) => a + modelMonthlyDemand(w, m, w.meta.currentDate), 0);
+const unitsOf = (w: World, m: World['models'][number]) => m.retailLastMonth || modelMonthlyDemand(w, m, w.meta.currentDate);
+
+/**
+ * Apply completion effects and describe each one as measured: before → after,
+ * with its value at today's volumes, so the player can see what changed.
+ */
 export function applyProjectEffects(w: World, effects: ProjectEffect[]): string[] {
   const d = w.meta.currentDate;
   const out: string[] = [];
@@ -174,29 +245,48 @@ export function applyProjectEffects(w: World, effects: ProjectEffect[]): string[
       case 'model_appeal': {
         const m = byId(w.models, e.modelId);
         if (m) {
+          const before = demandOf(w, [m.id]);
           m.baseAppeal += e.delta;
-          out.push(`${m.name} appeal ${e.delta > 0 ? '+' : ''}${e.delta}.`);
+          const after = demandOf(w, [m.id]);
+          out.push(`${m.name} is more attractive (appeal ${e.delta > 0 ? '+' : ''}${e.delta}): demand ${n0(before)} → ${n0(after)} cars a month (${pctChange(before, after)}).`);
         }
         break;
       }
       case 'model_quality': {
-        for (const m of w.models) if (e.modelId === '*' || m.id === e.modelId) m.quality = Math.min(100, m.quality + e.delta);
-        out.push(`Quality ${e.delta > 0 ? '+' : ''}${e.delta} (${e.modelId === '*' ? 'all models' : byId(w.models, e.modelId)?.name}).`);
+        const ids = w.models.filter((m) => e.modelId === '*' || m.id === e.modelId).map((m) => m.id);
+        const before = demandOf(w, ids);
+        for (const m of w.models) if (ids.includes(m.id)) m.quality = Math.min(100, m.quality + e.delta);
+        const after = demandOf(w, ids);
+        out.push(`Build quality ${e.delta > 0 ? '+' : ''}${e.delta} (${e.modelId === '*' ? 'all models' : byId(w.models, e.modelId)?.name}): demand ${pctChange(before, after)} (${n0(after - before)} cars a month).`);
         break;
       }
       case 'model_cost': {
         const m = byId(w.models, e.modelId);
         if (m) {
+          const before = m.otherMaterialCostCents;
           m.otherMaterialCostCents += e.deltaCents;
-          out.push(`${m.name} unit cost ${e.deltaCents > 0 ? '+' : '−'}€${Math.abs(e.deltaCents / 100).toLocaleString('en-GB')}.`);
+          const yearly = e.deltaCents * unitsOf(w, m) * 12;
+          out.push(`${m.name} material cost ${eu(before)} → ${eu(m.otherMaterialCostCents)} of parts per car (${e.deltaCents < 0 ? 'saves' : 'costs'} ≈${em(Math.abs(yearly))} a year at current volumes).`);
         }
+        break;
+      }
+      case 'material_pct': {
+        let yearly = 0;
+        for (const m of w.models) {
+          if (e.modelId !== '*' && m.id !== e.modelId) continue;
+          const delta = Math.round(m.otherMaterialCostCents * e.pct);
+          m.otherMaterialCostCents += delta;
+          if (m.status === 'in_production') yearly += delta * unitsOf(w, m) * 12;
+        }
+        out.push(`Material cost ${(e.pct * 100).toFixed(1)}% on ${e.modelId === '*' ? 'every model' : byId(w.models, e.modelId)?.name} (${yearly < 0 ? 'saves' : 'costs'} ≈${em(Math.abs(yearly))} a year at current volumes).`);
         break;
       }
       case 'model_co2': {
         const m = byId(w.models, e.modelId);
         if (m) {
+          const before = m.co2Gkm;
           m.co2Gkm = e.gkm;
-          out.push(`${m.name} CO₂ now ${e.gkm} g/km.`);
+          out.push(`${m.name} CO₂ ${before} → ${e.gkm} g/km (≈${eu(Math.round((before - e.gkm) * PARAMS.co2PenaltyPerGramPerVehicleCents))} less penalty per car while the fleet is above target).`);
         }
         break;
       }
@@ -204,8 +294,16 @@ export function applyProjectEffects(w: World, effects: ProjectEffect[]): string[
         const m = byId(w.models, e.modelId);
         if (m) {
           m.euro7Compliant = 1;
-          out.push(`${m.name} certified to Euro 7.`);
+          out.push(`${m.name} certified to Euro 7 — it can still be sold after the cut-off.`);
         }
+        break;
+      }
+      case 'model_feature': {
+        for (const m of w.models) {
+          if (e.modelId !== '*' && m.id !== e.modelId) continue;
+          if (!m.features.includes(e.feature)) m.features = [...m.features.filter((f) => !(e.feature.startsWith('Order online') && f === 'Sold through dealers') && !(e.feature.startsWith('48V') && f.startsWith('1.2-litre'))), e.feature];
+        }
+        out.push(`New on ${e.modelId === '*' ? 'every model' : byId(w.models, e.modelId)?.name}: ${e.feature}.`);
         break;
       }
       case 'model_launch': {
@@ -229,56 +327,103 @@ export function applyProjectEffects(w: World, effects: ProjectEffect[]): string[
       case 'factory_overhead_pct': {
         const f = byId(w.factories, e.factoryId);
         if (f) {
+          const before = f.fixedOverheadMonthlyCents;
           f.fixedOverheadMonthlyCents = scale(f.fixedOverheadMonthlyCents, 1 + e.pct);
-          out.push(`${f.name} overhead ${(e.pct * 100).toFixed(0)}%.`);
+          out.push(`${f.name} overhead ${em(before)} → ${em(f.fixedOverheadMonthlyCents)} a month (${e.pct < 0 ? 'saves' : 'costs'} ≈${em(Math.abs((f.fixedOverheadMonthlyCents - before) * 12))} a year).`);
         }
         break;
       }
       case 'factory_crew_pct': {
         const f = byId(w.factories, e.factoryId);
         if (f) {
+          const before = steadyStateCrew(w, f);
           f.crewPerDailyUnit = Math.round(f.crewPerDailyUnit * (1 + e.pct) * 100) / 100;
-          out.push(`${f.name} crew requirement ${(e.pct * 100).toFixed(0)}%.`);
+          const after = steadyStateCrew(w, f);
+          const dep = byId(w.departments, f.departmentId);
+          const surplus = dep ? dep.headcount - Math.round(after / (1 - f.absenteeismPct / 100)) : 0;
+          out.push(`${f.name} needs ${n0(before - after)} fewer people at the planned rate (${n0(before)} → ${n0(after)} on the lines).${surplus > 50 && dep ? ` It now has about ${n0(surplus)} more people than it needs — ≈${em(Math.round(surplus * dep.annualCostPerHeadCents * w.meta.wageIndex))} a year of payroll until headcount comes down.` : ''}`);
         }
         break;
       }
       case 'line_capacity': {
         const l = byId(w.lines, e.lineId);
         if (l) {
+          const before = l.maxDailyRate;
           l.maxDailyRate += e.delta;
-          out.push(`${l.name} capacity +${e.delta}/day.`);
+          out.push(`${l.name} capacity ${before} → ${l.maxDailyRate} cars a day (the planned rate stays ${l.plannedDailyRate} until you raise it).`);
         }
         break;
       }
       case 'supply_capacity': {
         const s = byId(w.supplies, e.supplyId);
         if (s) {
+          const before = s.dailyCapacity;
           s.dailyCapacity = Math.max(s.dailyCapacity, e.dailyCapacity);
-          out.push(`${s.component} capacity ${e.dailyCapacity}/day.`);
+          out.push(`${s.component} capacity ${before} → ${s.dailyCapacity} a day.`);
         }
         break;
       }
       case 'segment_ref_price_pct': {
         const m = byId(w.models, e.modelId);
         if (m) {
+          const before = demandOf(w, [m.id]);
           m.baseAppeal += e.pct * 100 * 0.8;
-          out.push(`${m.name} positioned upmarket (appeal supports ~${(e.pct * 100).toFixed(0)}% higher price).`);
+          const after = demandOf(w, [m.id]);
+          out.push(`${m.name} positioned upmarket: at today’s price demand ${n0(before)} → ${n0(after)} a month; it can carry a price about ${(e.pct * 100).toFixed(0)}% higher for the same demand.`);
         }
         break;
       }
       case 'warranty_pct': {
-        for (const m of w.models) m.warrantyPerUnitCents = scale(m.warrantyPerUnitCents, 1 + e.pct);
-        out.push(`Warranty cost ${(e.pct * 100).toFixed(0)}% on all models.`);
+        let yearly = 0;
+        for (const m of w.models) {
+          const before = m.warrantyPerUnitCents;
+          m.warrantyPerUnitCents = scale(m.warrantyPerUnitCents, 1 + e.pct);
+          if (m.status === 'in_production') yearly += (m.warrantyPerUnitCents - before) * unitsOf(w, m) * 12;
+        }
+        out.push(`Warranty cost ${(e.pct * 100).toFixed(0)}% on every car (${yearly < 0 ? 'saves' : 'costs'} ≈${em(Math.abs(yearly))} a year).`);
         break;
       }
       case 'distribution': {
+        const before = demandOf(w);
         w.meta.distributionUtility += e.delta;
-        out.push(`Distribution reach improved.`);
+        const after = demandOf(w);
+        out.push(`Sales reach widened: demand for Asterion cars ${pctChange(before, after)} (≈${n0(after - before)} more buyers a month at today’s prices).`);
+        break;
+      }
+      case 'marketing_efficiency': {
+        const before = demandOf(w);
+        w.meta.marketingEfficiency = Math.round(w.meta.marketingEfficiency * (1 + e.pct) * 100) / 100;
+        const after = demandOf(w);
+        out.push(`Each marketing euro now works ${Math.round(e.pct * 100)}% harder: at today’s budget demand ${pctChange(before, after)} (≈${n0(after - before)} cars a month).`);
+        break;
+      }
+      case 'morale': {
+        for (const dep of w.departments) if (e.departmentId === '*' || dep.id === e.departmentId) dep.morale = Math.max(0, Math.min(100, dep.morale + e.delta));
+        out.push(`Morale ${e.delta > 0 ? '+' : ''}${e.delta} ${e.departmentId === '*' ? 'across the company' : `at ${byId(w.departments, e.departmentId)?.name}`}.`);
+        break;
+      }
+      case 'absenteeism': {
+        for (const f of w.factories) if (e.factoryId === '*' || f.id === e.factoryId) f.absenteeismPct = Math.max(2, Math.round((f.absenteeismPct + e.delta) * 10) / 10);
+        out.push(`Absenteeism ${e.delta > 0 ? '+' : ''}${e.delta} point${Math.abs(e.delta) === 1 ? '' : 's'} at ${e.factoryId === '*' ? 'every plant' : byId(w.factories, e.factoryId)?.name} — more output from the same crews.`);
+        break;
+      }
+      case 'trust': {
+        const c = byId(w.characters, e.characterId);
+        if (c) {
+          adjustTrust(w, c.id, e.delta);
+          out.push(`${c.name} (${c.orgName}) ${e.delta > 0 ? 'appreciates it' : 'resents it'} (trust ${e.delta > 0 ? '+' : ''}${e.delta}).`);
+        }
         break;
       }
     }
   }
   return out;
+}
+
+function pctChange(before: number, after: number): string {
+  if (before <= 0) return 'n/a';
+  const x = (after / before - 1) * 100;
+  return `${x >= 0 ? '+' : ''}${x.toFixed(1)}%`;
 }
 
 export function resolveIssue(w: World, iss: Issue, note: string): void {

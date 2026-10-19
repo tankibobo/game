@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { OfferForm } from '../components/Negotiation';
 import { ShareForm } from '../components/ShareForm';
+import { ReplyExtras } from '../components/Ask';
+import { DocumentView } from '../components/ReportView';
 import { Card, Empty, Loading, Progress, Status } from '../components/ui';
 import { useGame, useView } from '../ctx';
 import { fmtDate, titleCase } from '../format';
 
-function Reply({ m, actions }: { m: any; actions: any[] }) {
+function Reply({ m, actions, documents, characterId, conversationId }: { m: any; actions: any[]; documents: any[]; characterId: string; conversationId: string }) {
   const { reviewAction } = useGame();
   const s = m.structured ?? {};
   const mine = actions.filter((a) => (s.actionIds ?? []).includes(a.id));
@@ -28,6 +30,7 @@ function Reply({ m, actions }: { m: any; actions: any[] }) {
           <div className="tiny muted">Argument assessment: {s.negotiation.argumentQuality > 0.03 ? 'strong' : s.negotiation.argumentQuality > 0 ? 'moderate' : 'weak'} ({s.negotiation.argumentSource})</div>
         </div>
       )}
+      <ReplyExtras structured={s} documents={documents} characterId={characterId} conversationId={conversationId} />
       {s.factWarnings?.length > 0 && (
         <div className="callout warning small">
           <strong>Unverified claim{s.factWarnings.length > 1 ? 's' : ''} — the simulation record disagrees:</strong>
@@ -107,7 +110,7 @@ export function Meeting() {
             {view.messages.map((m: any) =>
               m.role === 'system' ? (
                 <div key={m.id} className="msg system">
-                  <div className="bubble">📎 {m.content}{m.structured?.body && <details><summary className="tiny">Show contents</summary><div className="tiny pre">{m.structured.body}</div></details>}</div>
+                  <div className="bubble">📎 {m.content}{m.structured?.attachments ? (view.documents ?? []).filter((d: any) => m.structured.attachments.includes(d.id)).map((d: any) => <details key={d.id}><summary className="tiny">Show contents</summary><DocumentView doc={d} /></details>) : m.structured?.body && <details><summary className="tiny">Show contents</summary><div className="tiny pre">{m.structured.body}</div></details>}</div>
                 </div>
               ) : m.role === 'player' ? (
                 <div key={m.id} className="msg player">
@@ -115,7 +118,7 @@ export function Meeting() {
                   <div className="meta" style={{ textAlign: 'right' }}>You · {fmtDate(m.simDate)}</div>
                 </div>
               ) : (
-                <Reply key={m.id} m={m} actions={view.actions} />
+                <Reply key={m.id} m={m} actions={view.actions} documents={view.documents ?? []} characterId={view.conversation.characterId} conversationId={view.conversation.id} />
               ),
             )}
             {pendingText && (

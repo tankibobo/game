@@ -5,14 +5,15 @@ import { openDb } from '../db/connection';
 import { GameError, actionView, advanceTime, confirmAction, createNewGame, executeApproved, forceForecast, getAction, modifyAction, proposeAction, rejectAction } from '../game/game';
 import { actionCatalog, company, conversationView, dashboard, finance, history, inboxView, journal, latestForecast, operations, products, projectsView, statement, worldView } from '../game/queries';
 import type { SaveManager } from '../game/saves';
-import { sendMessage, startConversation, submitOffer } from '../llm/conversation';
+import { quickQuestion, sendMessage, startConversation, submitOffer } from '../llm/conversation';
 import { LlmError, type LlmConfig } from '../llm/provider';
 import { isSimDate } from '../../shared/dates';
 import { SCENARIO_BRIEF } from '../scenario/initial';
 import { SCENARIOS, scenarioOf } from '../scenario/scenarios';
 import { DIFFICULTIES } from '../engine/difficulty';
 import { loadWorld } from '../db/repo';
-import { DOCUMENT_TYPES, recentDocuments, shareDocument } from '../game/documents';
+import { DOCUMENT_TYPES, getDocument, recentDocuments, shareDocument } from '../game/documents';
+import { buildReport, reportInfo } from '../reports/catalog';
 import { decisionsView } from '../game/decisions';
 import { MANUAL, askGuide, topicAnswer } from '../guide/guide';
 import { coachReport } from '../guide/advisor';
@@ -175,6 +176,10 @@ export function buildApi(saves: SaveManager, llm: LlmConfig): express.Router {
     const result = await sendMessage(db(), llm, String(req.params.id), b.text);
     res.json(result);
   });
+  r.post('/ask', async (req, res) => {
+    const b = body(z.object({ characterId: z.string(), question: z.string().min(1).max(2000) }), req);
+    res.json(await quickQuestion(db(), llm, b.characterId, b.question));
+  });
   r.post('/negotiations/:id/offer', async (req, res) => {
     const b = body(z.object({ terms: z.record(z.string(), z.number()), message: z.string().max(2000).default(''), conversationId: z.string().nullable().optional(), idempotencyKey: z.string().min(8).max(100).optional() }), req);
     res.json(await submitOffer(db(), llm, String(req.params.id), b.terms, b.message, b.conversationId ?? null, b.idempotencyKey));
@@ -207,12 +212,35 @@ export function buildApi(saves: SaveManager, llm: LlmConfig): express.Router {
         negotiation: w.negotiations.map((n) => ({ id: n.id, label: n.title })),
         board_proposal: w.boardProposals.filter((b) => b.status !== 'withdrawn').map((b) => ({ id: b.id, label: `${b.title} (${b.status})` })),
       },
-      recent: recentDocuments(db(), '0000-00-00', 40),
+      recent: recentDocuments(db(), '0000-00-00', 60).map((d) => ({ ...d, reports: undefined, body: undefined, reportTitles: d.reports.map((r) => r.title) })),
     });
   });
+  r.get('/documents/:id', (req, res) => res.json(getDocument(db(), String(req.params.id))));
   r.post('/documents/share', (req, res) => {
-    const b = body(z.object({ docKey: z.string(), param: z.string().nullable().optional(), recipientIds: z.array(z.string()).min(1).max(20), note: z.string().max(2000).optional(), conversationId: z.string().nullable().optional() }), req);
-    res.json(shareDocument(db(), b));
+    const b = body(
+      z.object({
+        reports: z.array(z.object({ key: z.string(), param: z.string().nullable().optional() })).max(6).optional(),
+        memo: z.string().max(3000).optional(),
+        // legacy single-document form
+        docKey: z.string().optional(),
+        param: z.string().nullable().optional(),
+        note: z.string().max(3000).optional(),
+        recipientIds: z.array(z.string()).min(1).max(20),
+        conversationId: z.string().nullable().optional(),
+      }),
+      req,
+    );
+    const reports = b.reports ?? (b.docKey && b.docKey !== 'memo' ? [{ key: b.docKey, param: b.param ?? null }] : []);
+    res.json(shareDocument(db(), { reports, memo: b.memo ?? b.note ?? '', recipientIds: b.recipientIds, conversationId: b.conversationId ?? null }));
+  });
+  r.get('/reports', (_req, res) => res.json({ reports: reportInfo() }));
+  r.get('/reports/:key', (req, res) => {
+    const d = db();
+    try {
+      res.json(buildReport(d, loadWorld(d), String(req.params.key), typeof req.query.param === 'string' ? req.query.param : null));
+    } catch (e) {
+      throw new GameError(e instanceof Error ? e.message : String(e));
+    }
   });
 
   r.post('/inbox/:id/read', (req, res) => {

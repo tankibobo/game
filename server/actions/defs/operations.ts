@@ -1,12 +1,14 @@
 import { z } from 'zod';
 import { addDays, diffDays, isSimDate, workingDaysBetween } from '../../../shared/dates';
 import { fmtEur, mEur, times } from '../../../shared/money';
-import { marketingUtility, modelMonthlyDemand, segmentShares } from '../../engine/demand';
+import { campaignUplift, campaignUpliftFor, marketingUtility, modelMonthlyDemand, segmentShares } from '../../engine/demand';
+import { post } from '../../engine/ledger';
+import { RULES } from '../../engine/params';
 import { availableCrew, requiredCrew } from '../../engine/operations';
 import { unitMaterialCost } from '../../scenario/initial';
-import { byId, clamp, emit, type World } from '../../engine/world';
+import { byId, clamp, emit, nextId, type World } from '../../engine/world';
 import { ok, type ActionDef } from '../types';
-import type { Consequence } from '../../../shared/domain';
+import type { Campaign, Consequence } from '../../../shared/domain';
 
 const money = z.number().int();
 
@@ -182,6 +184,57 @@ export const setMarketingBudget: ActionDef<{ monthlyCents: number; reason?: stri
     w.meta.marketingMonthlyCents = p.monthlyCents;
     emit(w, { type: 'marketing_budget', category: 'market', severity: 'info', title: `Marketing budget set to ${fmtEur(p.monthlyCents)}/month`, description: `Previously ${fmtEur(old)}/month.`, causeKind: 'player_action', source: 'action', actionId: ctx.actionId });
     return { summary: 'Marketing budget updated', details: [] };
+  },
+};
+
+export const launchCampaign: ActionDef<{ modelId: string; spendCents: number; weeks: number; name?: string; reason?: string }> = {
+  type: 'launch_campaign',
+  label: 'Launch a marketing campaign',
+  description: 'A targeted campaign for one model (TV, digital, dealer events) for a few weeks: lifts that model’s demand while it runs. Its extra sales and return are tracked in the Marketing performance report.',
+  llmProposable: true,
+  affectsForecast: true,
+  amountCents: (_w, p) => p.spendCents,
+  schema: z.object({ modelId: z.string(), spendCents: money.min(mEur(1)).max(mEur(40)), weeks: z.number().int().min(2).max(16), name: z.string().max(80).optional(), reason: z.string().max(300).optional() }),
+  validate: (w, p) => {
+    const m = byId(w.models, p.modelId);
+    if (!m) return { errors: ['Unknown model.'], warnings: [] };
+    if (m.status !== 'in_production') return { errors: [`${m.name} is not on sale.`], warnings: [] };
+    const v = ok();
+    const end = addDays(w.meta.currentDate, p.weeks * 7);
+    if ((w.meta.campaigns ?? []).some((c) => c.modelId === m.id && c.end >= w.meta.currentDate)) v.errors.push(`A campaign for the ${m.name} is already running; wait until it ends.`);
+    const stockDays = ((m.dealerStock + m.fgUnits) / Math.max(1, modelMonthlyDemand(w, m, w.meta.currentDate))) * 30;
+    if (stockDays < 25) v.warnings.push(`Only ≈${Math.round(stockDays)} days of ${m.name} stock: extra demand may turn into waiting lists rather than sales unless production rises.`);
+    if (end > addDays(w.meta.currentDate, 120)) v.errors.push('Campaigns run for at most 16 weeks.');
+    return v;
+  },
+  preview: (w, p) => {
+    const m = byId(w.models, p.modelId)!;
+    const days = p.weeks * 7;
+    const uplift = campaignUpliftFor(w, p.spendCents, days);
+    const base = modelMonthlyDemand(w, m, w.meta.currentDate) / campaignUplift(w, m.id, w.meta.currentDate);
+    const extra = base * (uplift - 1) * (days / 30);
+    const perCar = m.netPriceCents - unitMaterialCost(w, m) - m.warrantyPerUnitCents - m.logisticsPerUnitCents;
+    const gain = Math.round(extra * perCar);
+    return {
+      summary: `${p.name?.trim() || `${m.name} campaign`}: ${fmtEur(p.spendCents)} over ${p.weeks} weeks`,
+      consequences: [
+        { label: 'Campaign spend (marketing expense, paid within 30 days)', amountCents: -p.spendCents, kind: 'pnl' },
+        { label: `${m.name} demand +${((uplift - 1) * 100).toFixed(1)}% while it runs: ≈${Math.round(extra).toLocaleString('en-GB')} extra cars over ${p.weeks} weeks (estimate)`, kind: 'operational' },
+        { label: `Extra contribution if the cars are available (≈${fmtEur(perCar)} per car, estimate)`, amountCents: gain, kind: 'pnl' },
+        { label: gain > p.spendCents ? 'Pays back on these estimates.' : 'Does not pay back on its own on these estimates — worth it mainly to clear stock or support a launch.', kind: 'info' },
+      ],
+      approvals: p.spendCents > RULES.ceoSpendLimitCents ? [{ approver: 'board', reason: 'Spend above the CEO limit.' }] : [],
+    };
+  },
+  commit: (w, p, ctx) => {
+    const m = byId(w.models, p.modelId)!;
+    const days = p.weeks * 7;
+    const c: Campaign = { id: nextId(w, 'CMP'), name: p.name?.trim() || `${m.name} campaign ${w.meta.currentDate.slice(0, 7)}`, modelId: m.id, start: w.meta.currentDate, end: addDays(w.meta.currentDate, days - 1), spendCents: p.spendCents, uplift: campaignUpliftFor(w, p.spendCents, days), extraUnits: 0, extraContributionCents: 0, actionId: ctx.actionId };
+    w.meta.campaigns = [...(w.meta.campaigns ?? []), c].slice(-20);
+    post(w, { description: `Marketing campaign: ${c.name}`, sourceType: 'marketing', sourceId: c.id, lines: [{ account: '6200', amountCents: p.spendCents }, { account: '2000', amountCents: -p.spendCents }] });
+    w.payables.push({ id: nextId(w, 'AP'), counterpartyId: 'VARIOUS', category: 'marketing', amountCents: p.spendCents, issueDate: w.meta.currentDate, dueDate: addDays(w.meta.currentDate, 30), status: 'open', paidDate: null, sourceId: c.id, liabilityAccount: '2000' });
+    emit(w, { type: 'campaign_launched', category: 'market', severity: 'info', title: `Campaign launched: ${c.name}`, description: `${fmtEur(p.spendCents)} over ${p.weeks} weeks; ${m.name} demand +${((c.uplift - 1) * 100).toFixed(1)}% until ${c.end}.`, causeKind: 'player_action', source: 'action', actionId: ctx.actionId, entities: [{ type: 'model', id: m.id }] });
+    return { summary: 'Campaign launched', details: [c.id], result: { campaignId: c.id } };
   },
 };
 

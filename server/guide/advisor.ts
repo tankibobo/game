@@ -11,13 +11,14 @@ import type { DB } from '../db/connection';
 import { rowToAction } from '../db/repo';
 import { confidenceTarget, meetingForSubmission, upcomingMeeting } from '../engine/board';
 import { co2Target, fleetCo2Ytd } from '../engine/close';
-import { modelMonthlyDemand } from '../engine/demand';
+import { fleetMonthlyNeed, modelMonthlyDemand } from '../engine/demand';
 import { difficultyOf } from '../engine/difficulty';
 import { mandateObjectives, mandateScore } from '../engine/mandate';
 import { engineeringFreeFte, interestCover, liquidity, netLeverage, rcf } from '../engine/metrics';
 import { byId, type World } from '../engine/world';
 import { staffingNeed } from '../actions/defs/people';
 import { templateStatus } from '../game/decisions';
+import { pendingSignatures } from '../game/game';
 
 export interface AdviceAction {
   type: string;
@@ -66,7 +67,7 @@ export function productionPlanFor(w: World, m: World['models'][number]): { deman
   const d = w.meta.currentDate;
   const lines = w.lines.filter((l) => l.modelId === m.id && l.status === 'running');
   if (!lines.length) return null;
-  const demand = [0, 30, 60].reduce((a, k) => a + modelMonthlyDemand(w, m, addDays(d, k)), 0) / 3;
+  const demand = [0, 30, 60].reduce((a, k) => a + modelMonthlyDemand(w, m, addDays(d, k)), 0) / 3 + fleetMonthlyNeed(w, m.id, d);
   if (demand <= 0) return null;
   const stock = m.dealerStock + m.fgUnits + m.inTransit;
   const stockDays = Math.round((stock / demand) * 30);
@@ -94,7 +95,8 @@ export function coachReport(db: DB, w: World): CoachReport {
   const drivers = ct.factors.filter((f) => Math.abs(f.delta) >= 1).sort((a, b) => a.delta - b.delta);
 
   // ---- open contracts to sign, offers to accept, approvals waiting
-  for (const c of w.contracts.filter((x) => x.status === 'agreed')) {
+  const signing = pendingSignatures(db, w);
+  for (const c of w.contracts.filter((x) => x.status === 'agreed' && !signing.has(x.id))) {
     adv.push({ id: `sign-${c.id}`, priority: P(1), area: 'deals', title: `Sign the agreement: ${c.title}`, why: 'An agreement reached at the table does nothing until it is signed — the other side can still walk away.', steps: ['Click “Preview this decision” below, read the cost, then confirm (or submit to the board if it asks).'], action: { type: 'sign_contract', payload: { contractId: c.id }, label: `Sign ${c.title}`, rationale: `This agreement was negotiated to resolve a critical constraint: ${c.summary}` }, link: { page: 'inbox', param: 'contracts', label: 'Contracts' } });
   }
   for (const f of w.financing.filter((x) => x.status === 'offered' && x.offer)) {

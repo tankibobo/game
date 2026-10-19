@@ -2,8 +2,9 @@ import { z } from 'zod';
 import { fmtEur } from '../../../shared/money';
 import { NEGOTIATION_TEMPLATES, evaluateOffer, lastCounter, newNegotiation, processOffer } from '../../engine/negotiation';
 import { RULES } from '../../engine/params';
-import { adjustTrust, byId, emit, remember } from '../../engine/world';
+import { adjustTrust, byId, emit, inbox, remember } from '../../engine/world';
 import { ok, type ActionDef } from '../types';
+import type { World } from '../../engine/world';
 
 export const openNegotiation: ActionDef<{ templateKey: string }> = {
   type: 'open_negotiation',
@@ -89,6 +90,25 @@ export const negotiateContract: ActionDef<OfferPayload> = {
   },
 };
 
+/** What signing binds the company to, as the General Counsel would flag it. */
+export function legalReview(w: World, key: string, t: Record<string, number>): string[] {
+  const days = 230;
+  if (key === 'voltaris_supply') {
+    const exposure = Math.round((t.takeOrPayPct / 100) * t.dailyVolume * days * t.priceEur * 100);
+    return [`binding take-or-pay: Asterion pays for at least ${t.takeOrPayPct}% of ${t.dailyVolume} packs a day whether it uses them or not — about ${fmtEur(exposure)} a year once capacity is live.`, `the €${t.prepaymentM}m prepayment is only recovered against future pack invoices; if the Eon stops, it is at risk.`];
+  }
+  if (key === 'labor_agreement') {
+    const payroll = w.departments.reduce((a, d) => a + d.headcount * d.annualCostPerHeadCents, 0) * w.meta.wageIndex;
+    return [`wages rise ${t.wageIncreasePct}% for everyone (≈${fmtEur(Math.round(payroll * t.wageIncreasePct / 100))} a year), permanently.`, t.jobGuaranteeMonths > 0 ? `no compulsory redundancies at the plants for ${t.jobGuaranteeMonths} months — breaking it frees the union from the peace obligation.` : 'no job guarantee: compulsory cuts remain possible (but costly in trust).', 'in return: a peace obligation — no strikes while the agreement runs.'];
+  }
+  if (key === 'hanseatic_second_source') return [`the €${t.developmentFeeM}m development fee is payable within 30 days and is not refundable.`];
+  if (key === 'contract_assembly') return [`Lyon must reserve ${t.carsPerDay} cars a day of capacity and the crews for them for ${t.years} year${t.years > 1 ? 's' : ''}; the Vela line loses that capacity.`, 'it is a partnership with a direct competitor: confidential processes must be ring-fenced.'];
+  if (key === 'hanseatic_price') return [`volume commitment: ${t.volumeCommitPct}% of current Kora hybrid-module volumes is take-or-pay for the contract term; the sole-source agreement runs ${t.extensionYears} year(s) longer.`];
+  if (key.startsWith('fleet_')) return [`a firm delivery commitment of ${t.units.toLocaleString('en-GB')} cars over ${t.months} months from factory stock — if the cars are not built in time, the buyer cancels the remainder.`, 'fleet discounts are visible to retail customers and dealers.'];
+  if (key === 'dealer_agreement') return ['the stock support is paid on cars already in dealer stock — it is a price reduction recognised immediately.'];
+  return [];
+}
+
 export const signContract: ActionDef<{ contractId: string }> = {
   type: 'sign_contract',
   label: 'Sign an agreed contract',
@@ -115,7 +135,7 @@ export const signContract: ActionDef<{ contractId: string }> = {
     const upfront = t.upfrontCents(w, terms);
     return {
       summary: `Sign: ${c.title}`,
-      consequences: [{ label: t.describe(terms), kind: 'info' }, ...(upfront ? [{ label: 'Up-front cash', amountCents: -upfront, kind: 'cash' as const }] : []), { label: `Total contract value ≈${fmtEur(c.valueCents)}`, kind: 'info' }],
+      consequences: [{ label: t.describe(terms), kind: 'info' }, ...(upfront ? [{ label: 'Up-front cash', amountCents: -upfront, kind: 'cash' as const }] : []), { label: `Total contract value ≈${fmtEur(c.valueCents)}`, kind: 'info' }, ...legalReview(w, c.templateKey!, terms).map((label) => ({ label: `Legal review (General Counsel): ${label}`, kind: 'risk' as const }))],
       approvals: upfront > RULES.ceoSpendLimitCents ? [{ approver: 'board', reason: `Up-front commitment ${fmtEur(upfront)} exceeds the CEO limit.` }] : [],
     };
   },
@@ -145,6 +165,71 @@ export const signContract: ActionDef<{ contractId: string }> = {
     }
     emit(w, { type: 'contract_signed', category: 'negotiation', severity: 'notice', title: `Signed: ${c.title}`, description: effects.join(' '), causeKind: 'player_action', source: 'action', actionId: ctx.actionId, entities: [{ type: 'contract', id: c.id }, ...(c.negotiationId ? [{ type: 'negotiation' as const, id: c.negotiationId }] : [])], consequences: effects.map((text) => ({ text })) });
     return { summary: 'Contract signed', details: effects };
+  },
+};
+
+export const withdrawNegotiation: ActionDef<{ negotiationId: string; reason: string }> = {
+  type: 'withdraw_negotiation',
+  label: 'Walk away from a negotiation',
+  description: 'End an open negotiation deliberately. The counterparty is disappointed (trust falls) and the talks cannot be reopened for 30 days.',
+  llmProposable: true,
+  schema: z.object({ negotiationId: z.string(), reason: z.string().min(3).max(400) }),
+  validate: (w, p) => {
+    const n = byId(w.negotiations, p.negotiationId);
+    if (!n) return { errors: ['Unknown negotiation.'], warnings: [] };
+    if (n.status !== 'open') return { errors: [`The negotiation is ${n.status}.`], warnings: [] };
+    const v = ok();
+    if (n.templateKey === 'labor_agreement') v.warnings.push('Without a wage agreement there is no peace obligation: strikes become likely.');
+    if (n.templateKey === 'voltaris_supply') v.warnings.push('Without more Voltaris packs the Eon cannot ramp up unless a second source is qualified and contracted.');
+    return v;
+  },
+  preview: (w, p) => {
+    const n = byId(w.negotiations, p.negotiationId)!;
+    const cp = byId(w.characters, n.counterpartyId);
+    return { summary: `Walk away: ${n.title}`, consequences: [{ label: `${cp?.name ?? 'The counterparty'} (${cp?.orgName ?? ''}) loses trust in you; talks can reopen only after 30 days.`, kind: 'people' }], approvals: [] };
+  },
+  commit: (w, p, ctx) => {
+    const n = byId(w.negotiations, p.negotiationId)!;
+    n.status = 'withdrawn';
+    n.rounds.push({ n: n.rounds.length, date: w.meta.currentDate, by: 'ceo', terms: n.rounds[n.rounds.length - 1]?.terms ?? {}, message: `Asterion ends the talks: ${p.reason}`, evaluation: null });
+    adjustTrust(w, n.counterpartyId, -5);
+    const cp = byId(w.characters, n.counterpartyId);
+    remember(w, { characterId: n.counterpartyId, kind: 'grievance', summary: `The CEO walked away from “${n.title}”: ${p.reason.slice(0, 200)}`, importance: 4, sentiment: -2, sourceType: 'negotiation', sourceId: n.id, entityRefs: [{ type: 'negotiation', id: n.id }] });
+    inbox(w, { kind: 'letter', fromId: n.counterpartyId, subject: `${n.title}: noted`, body: `We note that Asterion has ended the talks. We are disappointed — we had come a long way. Our door is not closed, but the next conversation will start from our position, not yours.`, priority: 'normal', linked: [{ type: 'negotiation', id: n.id }] });
+    emit(w, { type: 'negotiation_withdrawn', category: 'negotiation', severity: 'warning', title: `Talks ended by Asterion: ${n.title}`, description: `${p.reason}. ${cp?.name ?? 'The counterparty'} was told.`, causeKind: 'player_action', source: 'action', actionId: ctx.actionId, entities: [{ type: 'negotiation', id: n.id }, { type: 'character', id: n.counterpartyId }] });
+    return { summary: 'Negotiation ended', details: [] };
+  },
+};
+
+export const declineAgreement: ActionDef<{ contractId: string; reason: string }> = {
+  type: 'decline_agreement',
+  label: 'Decline to sign an agreed deal',
+  description: 'Back out of an agreement reached at the table before signing it. Nothing binding is lost, but the counterparty’s trust suffers badly.',
+  llmProposable: true,
+  schema: z.object({ contractId: z.string(), reason: z.string().min(3).max(400) }),
+  validate: (w, p) => {
+    const c = byId(w.contracts, p.contractId);
+    if (!c) return { errors: ['Unknown contract.'], warnings: [] };
+    if (c.status !== 'agreed') return { errors: [`The contract is ${c.status}; only an agreed, unsigned contract can be declined.`], warnings: [] };
+    return ok();
+  },
+  preview: (w, p) => {
+    const c = byId(w.contracts, p.contractId)!;
+    return { summary: `Decline to sign: ${c.title}`, consequences: [{ label: `${c.counterpartyName} will see this as going back on your word: a large loss of trust.`, kind: 'people' }], approvals: [] };
+  },
+  commit: (w, p, ctx) => {
+    const c = byId(w.contracts, p.contractId)!;
+    c.status = 'terminated';
+    c.summary = `${c.summary} Declined by Asterion on ${w.meta.currentDate}: ${p.reason}`;
+    const n = w.negotiations.find((x) => x.contractId === c.id);
+    if (n) n.status = 'withdrawn';
+    if (c.counterpartyId) {
+      adjustTrust(w, c.counterpartyId, -10);
+      remember(w, { characterId: c.counterpartyId, kind: 'grievance', summary: `The CEO refused to sign “${c.title}” after we had agreed terms.`, importance: 5, sentiment: -2, sourceType: 'contract', sourceId: c.id, entityRefs: [{ type: 'contract', id: c.id }] });
+      inbox(w, { kind: 'letter', fromId: c.counterpartyId, subject: `${c.title}`, body: 'We shook hands on those terms. Refusing to sign now is not how serious partners behave. We will remember it.', priority: 'high', linked: [{ type: 'contract', id: c.id }] });
+    }
+    emit(w, { type: 'agreement_declined', category: 'negotiation', severity: 'warning', title: `Asterion declines to sign: ${c.title}`, description: p.reason, causeKind: 'player_action', source: 'action', actionId: ctx.actionId, entities: [{ type: 'contract', id: c.id }] });
+    return { summary: 'Agreement declined', details: [] };
   },
 };
 

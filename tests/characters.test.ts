@@ -14,14 +14,19 @@ describe('characters share one consistent picture of the company', () => {
     const { db } = newGameDb();
     const t = ctx(db, 'CHR-HOLM');
     expect(t).toContain('WHAT THE CEO CAN DO');
-    expect(t).toContain('"Forecast report"');
-    expect(t).toMatch(/cannot send emails, reports or files yourself/);
+    expect(t).toContain('REPORT CATALOGUE');
+    expect(t).toContain('pnl — Profit & loss: where the money goes');
+    expect(t).toMatch(/You can attach reports your department produces/);
+    // The CFO sees her own department's figures, computed live.
+    expect(t).toContain('YOUR REPORTS');
+    expect(t).toContain('key "cash"');
   });
 
   it('lets the CEO share a report: recipients get the contents, colleagues know it circulated, outsiders do not', () => {
     const { db } = newGameDb();
     const before = fingerprint(db);
-    const doc = shareDocument(db, { docKey: 'forecast', recipientIds: ['CHR-HOLM', 'CHR-WIERZBICKI'], note: 'Please challenge the Eon assumptions.' });
+    const doc = shareDocument(db, { reports: [{ key: 'forecast' }], recipientIds: ['CHR-HOLM', 'CHR-WIERZBICKI'], memo: 'Please challenge the Eon assumptions.' });
+    expect(doc.reports[0].blocks.some((b) => b.kind === 'chart')).toBe(true);
     expect(doc.title).toMatch(/^Forecast/);
     expect(doc.body).toMatch(/FY operating profit/);
     const holm = ctx(db, 'CHR-HOLM');
@@ -38,14 +43,16 @@ describe('characters share one consistent picture of the company', () => {
   it('sends memos and project reports, and records them in the meeting when shared there', () => {
     const { db } = newGameDb();
     const conv = startConversation(db, 'CHR-FERRER');
-    shareDocument(db, { docKey: 'project_status', param: 'PRJ-EON', recipientIds: ['CHR-FERRER'], conversationId: conv.id });
+    shareDocument(db, { reports: [{ key: 'project', param: 'PRJ-EON' }], recipientIds: ['CHR-FERRER'], conversationId: conv.id });
     const sys = listMessages(db, conv.id).find((m) => m.role === 'system');
     expect(sys?.content).toMatch(/You shared “Project status: Eon/);
-    shareDocument(db, { docKey: 'memo', recipientIds: ['CHR-FERRER', 'CHR-LINDQVIST'], note: 'Battery supply is our first priority this quarter.' });
+    shareDocument(db, { reports: [], recipientIds: ['CHR-FERRER', 'CHR-LINDQVIST'], memo: 'Battery supply is our first priority this quarter.' });
     expect(ctx(db, 'CHR-LINDQVIST')).toContain('Battery supply is our first priority this quarter.');
-    expect(() => shareDocument(db, { docKey: 'memo', recipientIds: ['CHR-FERRER'], note: '' })).toThrow(/Write the memo/);
-    expect(shareDocument(db, { docKey: 'financials', recipientIds: ['CHR-HOLM'] }).title).toMatch(/Financial results \(2026-12\)/);
-    expect(() => shareDocument(db, { docKey: 'project_status', recipientIds: ['CHR-HOLM'] })).toThrow(/Choose which project/);
+    expect(() => shareDocument(db, { reports: [], recipientIds: ['CHR-FERRER'], memo: '' })).toThrow(/Choose at least one report, or write a memo/);
+    const dossier = shareDocument(db, { reports: [{ key: 'pnl' }, { key: 'unit_economics' }], recipientIds: ['CHR-HOLM', 'CHR-GARNIER'] });
+    expect(dossier.title).toBe('Dossier: Profit & loss: where the money goes · Margin per car, by model');
+    expect(dossier.reports).toHaveLength(2);
+    expect(() => shareDocument(db, { reports: [{ key: 'project' }], recipientIds: ['CHR-HOLM'] })).toThrow(/needs a project/);
   });
 
   it('keeps the leadership informed of the CEO’s decisions and of meetings with colleagues', async () => {

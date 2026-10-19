@@ -18,6 +18,7 @@ import { Meeting } from './pages/Meeting';
 import { Saves, Setup } from './pages/Saves';
 import { Decisions } from './pages/Decisions';
 import { Guide } from './components/Guide';
+import { AskPanel } from './components/Ask';
 
 const NAV: [Page, string][] = [
   ['dashboard', 'Executive dashboard'],
@@ -49,6 +50,7 @@ export function App() {
   const [lastAdvance, setLastAdvance] = useState<any>(null);
   const [guideOpen, setGuideOpen] = useState(false);
   const [guideTab, setGuideTab] = useState<'coach' | 'howto' | undefined>(undefined);
+  const [ask, setAsk] = useState<{ characterId?: string; question?: string } | null>(null);
 
   const toast = useCallback((text: string, kind: Toast['kind'] = 'info') => {
     const id = Date.now() + Math.random();
@@ -109,7 +111,7 @@ export function App() {
     }
   };
 
-  const ctx = { version, refresh, nav, go, toast, propose, reviewAction, status, openGuide: (tab?: 'coach' | 'howto') => { setGuideTab(tab); setGuideOpen(true); } };
+  const ctx = { version, refresh, nav, go, toast, propose, reviewAction, status, openGuide: (tab?: 'coach' | 'howto') => { setAsk(null); setGuideTab(tab); setGuideOpen(true); }, openAsk: (characterId?: string, question?: string) => { setGuideOpen(false); setAsk({ characterId, question }); } };
   if (!status) return <div className="empty">Connecting to the simulation server…</div>;
   const hasGame = !!status.activeSave && !!status.game;
   const meta = top?.meta;
@@ -159,7 +161,8 @@ export function App() {
                   <div className="top-kpi"><span className="l">Liquidity</span><span className="v" style={{ color: top.kpis.liquidityCents < 45_000_000_000 ? 'var(--critical-text)' : undefined }}>{fmtEur(top.kpis.liquidityCents)}</span></div>
                   <div className="top-kpi"><span className="l">Net leverage</span><span className="v">{top.kpis.netLeverage > 50 ? 'n/m' : `${top.kpis.netLeverage.toFixed(2)}x`}</span></div>
                   <div className="top-kpi"><span className="l">Board confidence</span><span className="v" style={{ color: top.board.confidence < 30 ? 'var(--critical-text)' : undefined }}>{Math.round(top.board.confidence)}/100</span></div>
-                  <button className="btn sm guide-btn" onClick={() => setGuideOpen(true)} title="Coach and how-to help">? Guide</button>
+                  <button className="btn sm" onClick={() => { setGuideOpen(false); setAsk({}); }} title="Ask an executive a quick question — no meeting needed">Ask someone</button>
+                  <button className="btn sm guide-btn" onClick={() => { setAsk(null); setGuideOpen(true); }} title="Advice and how-to help">? Guide</button>
                   <span className={`pill ${status.llm.available ? 'info' : ''}`} title={status.llm.available ? `Characters are voiced by ${llmLabel(status.llm)}; all outcomes are decided by the simulation engine.` : status.llm.note ?? 'Characters use the deterministic rule-based responder.'}>
                     {status.llm.available ? (status.llm.provider === 'claude-code' ? 'Claude characters' : 'LLM characters') : 'Deterministic mode'}
                   </span>
@@ -194,6 +197,7 @@ export function App() {
         </div>
       )}
       {review && <ActionReview key={review.id} action={review} onClose={() => { setReview(null); refresh(); }} />}
+      {ask && <AskPanel initial={ask} onClose={() => setAsk(null)} />}
       {guideOpen && <Guide page={nav.page} initialTab={guideTab} onClose={() => { setGuideOpen(false); setGuideTab(undefined); }} />}
       {lastAdvance && (
         <Modal title={lastAdvance.briefing.subject} onClose={() => setLastAdvance(null)} footer={<><button className="btn" onClick={() => { setLastAdvance(null); go('inbox'); }}>Open inbox</button><button className="btn primary" onClick={() => setLastAdvance(null)}>Continue</button></>}>

@@ -8,11 +8,11 @@ import type { World } from '../engine/world';
 import { byId } from '../engine/world';
 import { RULES } from '../engine/params';
 import { callBoardMeeting, issueBoardProposal } from './defs/board';
-import { negotiateContract, openNegotiation, signContract } from './defs/deals';
+import { declineAgreement, negotiateContract, openNegotiation, signContract, withdrawNegotiation } from './defs/deals';
 import { acceptFinancing, declineFinancing, requestFinancing } from './defs/finance';
-import { adjustProduction, changePrice, scheduleDowntime, setMarketingBudget } from './defs/operations';
+import { adjustProduction, changePrice, launchCampaign, scheduleDowntime, setMarketingBudget } from './defs/operations';
 import { hireStaff, makePromise, resolveCommitmentAction, restructureWorkforce } from './defs/people';
-import { addressIssue, approveProject, cancelProject, changeProjectScope, proposeBudget, startProject } from './defs/projects';
+import { addressIssue, approveProject, cancelProject, changeProjectScope, proposeBudget, startCustomProject, startProject } from './defs/projects';
 import type { ActionDef, ApprovalRequirement, Preview } from './types';
 
 export const ACTIONS: ActionDef[] = [
@@ -20,12 +20,14 @@ export const ACTIONS: ActionDef[] = [
   adjustProduction,
   scheduleDowntime,
   setMarketingBudget,
+  launchCampaign,
   hireStaff,
   restructureWorkforce,
   makePromise,
   resolveCommitmentAction,
   approveProject,
   startProject,
+  startCustomProject,
   changeProjectScope,
   proposeBudget,
   cancelProject,
@@ -36,6 +38,8 @@ export const ACTIONS: ActionDef[] = [
   openNegotiation,
   negotiateContract,
   signContract,
+  withdrawNegotiation,
+  declineAgreement,
   issueBoardProposal,
   callBoardMeeting,
 ];
@@ -81,11 +85,13 @@ function describeSchema(a: ActionDef): string {
     adjust_production: '{ lineId, plannedDailyRate (integer), reason? }',
     schedule_downtime: '{ factoryId, startDate (YYYY-MM-DD), endDate, reason }',
     set_marketing_budget: '{ monthlyCents, reason? }',
+    launch_campaign: '{ modelId, spendCents (integer cents, €1m–€40m), weeks (2–16), name?, reason? }',
     hire_staff: '{ departmentId, headcount, reason? }',
     restructure_workforce: "{ departmentId, reduction, mode: 'voluntary'|'compulsory', severancePerHeadCents?, reason? }",
     make_promise: "{ promiseeId, description, dueDate? (YYYY-MM-DD), conditions?, importance? (1-5), check? ({type:'freeform'} | {type:'milestone_completed_by', milestoneId} | {type:'project_completed_by', projectId} | {type:'no_headcount_reduction', departmentIds} | {type:'min_liquidity', amountCents} | {type:'price_floor', modelId, minNetPriceCents}) }",
     approve_project: '{ projectId }',
     start_project: '{ templateKey }',
+    start_custom_project: "{ name, kind: 'plant_efficiency'|'line_capacity'|'model_refresh'|'design_to_cost'|'quality'|'co2_reduction'|'digital_marketing'|'dealer_network'|'people', targetId (factoryId, lineId or modelId; null if none/all), size: 'small'|'medium'|'large', reason? }",
     change_project_scope: '{ projectId, newTargetDate?, staffingDelta?, budgetDeltaCents?, descopePct? (0-0.3), reason }',
     propose_budget: '{ projectId, amountCents, reason }',
     cancel_project: '{ projectId, reason }',
@@ -95,6 +101,8 @@ function describeSchema(a: ActionDef): string {
     open_negotiation: '{ templateKey }',
     negotiate_contract: '{ negotiationId, terms: { termKey: number }, message }',
     sign_contract: '{ contractId }',
+    withdraw_negotiation: '{ negotiationId, reason }',
+    decline_agreement: '{ contractId, reason }',
     issue_board_proposal: "{ title, kind: 'strategy'|'recovery_plan'|'other', rationale }",
     call_board_meeting: '{ date, reason }',
   };

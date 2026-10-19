@@ -14,7 +14,7 @@
  */
 import { addDays, type SimDate } from '../../shared/dates';
 import { scale, times, type Cents } from '../../shared/money';
-import { canRegister, expectedDailyDemand } from './demand';
+import { campaignUplift, canRegister, expectedDailyDemand } from './demand';
 import { post } from './ledger';
 import { PARAMS } from './params';
 import { nextId, rngFor, type World } from './world';
@@ -60,6 +60,19 @@ export function runSales(w: World): SalesResult {
     m.retailMtd += sold;
     m.cumulativeRetail += sold;
     res.retail[m.id] = sold;
+    // Campaign attribution: the share of today's sales the running campaign(s) added.
+    const uplift = campaignUplift(w, m.id, d);
+    if (uplift > 1 && sold > 0 && w.mode === 'live') {
+      const extra = sold * (1 - 1 / uplift);
+      const unitCost = m.fgUnits > 0 ? m.fgValueCents / m.fgUnits : m.otherMaterialCostCents;
+      const perCar = m.netPriceCents - unitCost - m.warrantyPerUnitCents - m.logisticsPerUnitCents;
+      const running = (w.meta.campaigns ?? []).filter((c) => c.modelId === m.id && d >= c.start && d <= c.end);
+      for (const c of running) {
+        const share = Math.log(c.uplift) / Math.log(uplift);
+        c.extraUnits = Math.round((c.extraUnits + extra * share) * 10) / 10;
+        c.extraContributionCents += Math.round(extra * share * perCar);
+      }
+    }
     // CO₂ fleet accounting is based on registrations (retail).
     w.meta.co2UnitsYtd += sold;
     w.meta.co2GramsYtd += sold * m.co2Gkm;

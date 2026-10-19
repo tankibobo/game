@@ -6,12 +6,24 @@ import { useGame, useView } from '../ctx';
 import { addDays, diffDays, fmtDate, fmtEur, titleCase } from '../format';
 import { startMeeting } from './Company';
 import { BoardOutlook } from '../components/ActionReview';
+import { DocumentView } from '../components/ReportView';
 
 type Tab = 'messages' | 'meetings' | 'negotiations' | 'commitments' | 'contracts' | 'board' | 'decisions';
 
+function InboxAttachment({ id, people }: { id: string; people: any[] }) {
+  const { data } = useView<any>(`/documents/${id}`);
+  if (!data) return null;
+  return (
+    <details className="attachment" open>
+      <summary>📎 {data.title}</summary>
+      <DocumentView doc={data} people={people} />
+    </details>
+  );
+}
+
 export function Inbox() {
   const { data: d, error, reload } = useView<any>('/inbox');
-  const { nav, go, toast, propose, reviewAction, refresh } = useGame();
+  const { nav, go, toast, propose, reviewAction, refresh, openAsk } = useGame();
   const [tab, setTab] = useState<Tab>('messages');
   const [sel, setSel] = useState<string | null>(null);
   const [negSel, setNegSel] = useState<string | null>(null);
@@ -40,7 +52,7 @@ export function Inbox() {
     }
   };
   const neg = d.negotiations.find((n: any) => n.id === negSel) ?? d.negotiations.find((n: any) => n.status === 'open') ?? d.negotiations[0];
-  const agreed = d.contracts.filter((c: any) => c.status === 'agreed');
+  const agreed = d.contracts.filter((c: any) => c.status === 'agreed' && !c.pendingNote);
   const pendingConfirm = d.pendingActions.filter((a: any) => a.status === 'pending_confirmation');
   const today = d.today;
   return (
@@ -86,6 +98,10 @@ export function Inbox() {
           {item ? (
             <Card title={item.subject} sub={`${name(item.fromId)} · ${fmtDate(item.date, 'long')} · ${item.kind}`} actions={item.fromId && chars.some((c) => c.id === item.fromId) ? <button className="btn sm primary" onClick={() => startMeeting(item.fromId, go, toast)}>Meet {name(item.fromId).split(' ')[0]}</button> : null}>
               <div className="pre">{item.body}</div>
+              {(item.attachments ?? []).map((id: string) => <InboxAttachment key={id} id={id} people={chars} />)}
+              <div className="row" style={{ marginTop: 8, gap: 6 }}>
+                {item.fromId && chars.some((c) => c.id === item.fromId && c.org !== 'competitor') && <button className="btn sm" onClick={() => openAsk(item.fromId, `About “${item.subject}”: `)}>Reply with a quick question</button>}
+              </div>
               {item.linked.length > 0 && <div className="row small" style={{ marginTop: 10 }}>Related: {item.linked.map((l: any) => <EntityLink key={l.id} type={l.type} id={l.id} />)}</div>}
             </Card>
           ) : (
@@ -220,7 +236,7 @@ export function Inbox() {
                     <td className="num"><D d={c.signedDate} /></td>
                     <td className="num"><D d={c.endDate} /></td>
                     <td className="small">{c.summary}{c.obligations.length > 0 && <div className="tiny muted">{c.obligations.map((o: any) => o.text).join(' · ')}</div>}</td>
-                    <td>{c.status === 'agreed' && <button className="btn sm primary" onClick={() => propose('sign_contract', { contractId: c.id })}>Sign…</button>}</td>
+                    <td>{c.status === 'agreed' && (c.pendingNote ? <span className="tiny muted">{c.pendingNote}</span> : <button className="btn sm primary" onClick={() => propose('sign_contract', { contractId: c.id })}>Sign…</button>)}</td>
                   </tr>
                 ))}
               </tbody>

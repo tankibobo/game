@@ -26,7 +26,8 @@ import { milestonesOf } from '../engine/projects';
 import { byId, type World } from '../engine/world';
 import { actionCatalogForLlm } from '../actions/registry';
 import { PROJECT_TEMPLATES } from '../actions/templates';
-import { DOCUMENT_TYPES, documentContext } from '../game/documents';
+import { documentContext } from '../game/documents';
+import { buildReport, reportInfo, reportToText, reportsOwnedBy } from '../reports/catalog';
 import { proposalActionIds } from '../engine/board';
 import { addDays } from '../../shared/dates';
 
@@ -165,15 +166,32 @@ export function buildContext(db: DB, w: World, opts: BuildOpts): ContextPackage 
   add('ceo_capabilities', 2, [
     'WHAT THE CEO CAN DO IN THIS GAME — only ask the CEO for these:',
     '- Take a decision (an action from the ACTION CATALOG). Decisions above the CEO’s authority go to the board automatically when confirmed and are carried out if approved.',
-    `- Share a document with you or others: ${DOCUMENT_TYPES.filter((t) => t.key !== 'memo').map((t) => `"${t.title}"`).join(', ')}; or send a written memo. If you need information you do not have, ask for one of these by name.`,
+    '- Send you (or others) any report from the REPORT CATALOGUE, or a written memo. If you need information you do not have, ask for a report by its key (request_reports) — nothing else exists.',
     '- Meet anyone (you cannot arrange meetings between other people), put a plan to the board, make and keep promises, and let time pass.',
-    'You cannot send emails, reports or files yourself, and you cannot promise to "come back later" with work: give your analysis now, from this context, and be clear about what you do not know.',
+    'REPORT CATALOGUE (key — title: contents): ' + reportInfo().map((r) => `${r.key}${r.param ? `:<${r.param} id>` : ''} — ${r.title}: ${r.description}`).join(' | '),
+    INTERNAL(c) ? `You can attach reports your department produces (YOUR REPORTS below) to your answer (attach_reports), and, when the CEO asks, send them to colleagues (share_reports). You cannot send anything else, and you cannot promise to "come back later" with work: give your analysis now, from this context and your reports, with their numbers, and be clear about what you do not know.` : 'You cannot send files yourself. Give your view now, from this context, and be clear about what you do not know.',
     'When you recommend something concrete, propose the concrete action itself (e.g. start_project, hire_staff), not a board proposal — it is submitted to the board automatically if needed. Only use issue_board_proposal to bundle already-drafted decisions (actionIds) or for a pure strategy endorsement, and say that an endorsement changes nothing by itself.',
   ].join('\n'));
 
-  // P2 — documents the CEO shared with this character
+  // P2 — documents this character received
   const docs = documentContext(db, w, c.id);
-  add('shared_documents', 2, docs.mine.length ? ['DOCUMENTS THE CEO SENT YOU (snapshots as of their date; newer facts elsewhere in this context override them):', ...docs.mine].join('\n') : '[FACT] The CEO has not sent you any documents recently.');
+  add('shared_documents', 2, docs.mine.length ? ['DOCUMENTS YOU RECEIVED (snapshots as of their date; newer facts elsewhere in this context override them):', ...docs.mine].join('\n') : '[FACT] Nobody has sent you any documents recently.');
+
+  // P3 — the reports this character's department produces, computed live (their own numbers)
+  const owned = INTERNAL(c) ? reportsOwnedBy(c.id).filter((r) => !r.param) : [];
+  if (owned.length) {
+    const lines = ['YOUR REPORTS (your department’s current figures — quote them precisely; attach the report when you use it):'];
+    for (const r of owned) {
+      try {
+        lines.push(`[FACT] key "${r.key}":\n${reportToText(buildReport(db, w, r.key, null, c.id), 1500)}`);
+      } catch {
+        /* not available yet */
+      }
+    }
+    const paramOwned = reportsOwnedBy(c.id).filter((r) => r.param);
+    if (paramOwned.length) lines.push(`You can also attach: ${paramOwned.map((r) => `"${r.key}:<${r.param} id>" (${r.title})`).join(', ')}.`);
+    add('own_reports', 3, lines.join('\n'));
+  }
 
   // P3 — company knowledge shared across the leadership (internal + board only)
   if (c.org === 'asterion' || c.org === 'board') {
