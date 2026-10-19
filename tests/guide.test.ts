@@ -79,13 +79,36 @@ describe('in-game guide', () => {
   it('gives advice from the Coach when asked what to do', async () => {
     const { db } = newGameDb();
     const a = await askGuide(db, none, 'What should I do first? The board keeps firing me.', 'dashboard');
-    expect(a.answer).toMatch(/Your top priorities: 1\)/);
+    expect(a.answer).toMatch(/Where I'd look first: 1\)/);
     expect(a.answer).toMatch(/Secure battery supply for the Eon/);
     expect(a.actions?.length).toBeGreaterThan(0);
     expect(a.related.map((r) => r.id)).toContain('how-to-win');
     // A how-to question still gets the manual, even when it mentions winning.
     const h = await askGuide(db, none, 'How do I win?', 'dashboard');
     expect(h.topics[0].id).toBe('how-to-win');
+  });
+
+  it('answers “why” questions about the company from its own figures, as a coach', async () => {
+    const { db } = newGameDb();
+    const a = await askGuide(db, none, 'Why am I losing money?', 'finance');
+    expect(a.pages.map((p) => p.page)).toContain('finance');
+    expect(a.answer.length).toBeGreaterThan(40);
+    expect(a.notes.join(' ')).toMatch(/Ask someone/);
+    const m = await askGuide(db, none, 'Is my marketing working?', 'products');
+    expect(m.pages[0].page).toBe('products');
+    // How-to questions on the same subject still get the manual's steps.
+    const h = await askGuide(db, none, 'How do I launch a campaign?', 'products');
+    expect(h.topics[0].id).toBe('marketing');
+    expect(h.steps.join(' ')).toMatch(/Launch a marketing campaign/);
+  });
+
+  it('sends the company figures to Claude and casts it as a coach outside the game', async () => {
+    const { db } = newGameDb();
+    const p = new ScriptedProvider([JSON.stringify({ answer: 'Your plants run far below capacity.', steps: [], pages: ['finance'], topic_ids: ['losing-money'] })]);
+    const a = await askGuide(db, withProvider(p), 'Why am I losing money?', 'finance');
+    expect(a.source).toBe('claude');
+    expect(p.calls[0].system).toMatch(/NOT part of the game/);
+    expect(p.calls[0].messages[0].content).toContain('COMPANY FIGURES:');
   });
 
   it('only names buttons, tabs and cards that exist in the interface', () => {

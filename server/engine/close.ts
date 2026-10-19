@@ -186,6 +186,8 @@ export function closeMonth(w: World): FinancialSnapshot {
     unitsWholesale: r.whs,
     unitsRetail: r.ret,
     headcount: headcount(w),
+    sharePriceCents: w.meta.sharePriceCents,
+    boardConfidence: w.meta.boardConfidence,
     byAccount: { ...w.meta.mtdByAccount },
     byModel: Object.fromEntries(w.models.filter((m) => m.status !== 'development' || m.productionMtd > 0).map((m) => [m.id, { produced: m.productionMtd, wholesale: m.wholesaleMtd, retail: m.retailMtd, lost: Math.round(m.lostSalesMtd), priceCents: m.netPriceCents, dealerStock: m.dealerStock, fgUnits: m.fgUnits, demand: Math.round(modelMonthlyDemand(w, m, d)) }])),
   };

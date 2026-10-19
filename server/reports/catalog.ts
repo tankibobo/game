@@ -207,8 +207,11 @@ function buildPnl({ w }: Ctx): Built {
   const blocks: ReportBlock[] = [];
   if (!useYtd) {
     blocks.push({ kind: 'text', text: 'No sales have been booked yet this year; the first month closes at the end of January. FY2026 figures for reference.' });
-    blocks.push({ kind: 'kpis', items: [{ label: 'FY2026 revenue', value: fmtEur(FY2026.revenueCents) }, { label: 'FY2026 EBITDA', value: fmtEur(FY2026.ebitdaCents) }, { label: 'FY2026 operating profit', value: fmtEur(FY2026.ebitCents), hint: pct(FY2026.ebitCents / FY2026.revenueCents) }] });
-    return { title: 'Profit & loss: where the money goes', summary: 'No month has closed yet this year.', blocks };
+    const fc = w.meta.lastForecastSummary;
+    blocks.push({ kind: 'kpis', items: [{ label: 'FY2026 revenue', value: fmtEur(FY2026.revenueCents) }, { label: 'FY2026 EBITDA', value: fmtEur(FY2026.ebitdaCents) }, { label: 'FY2026 operating profit', value: fmtEur(FY2026.ebitCents), hint: pct(FY2026.ebitCents / FY2026.revenueCents) }, ...(fc ? [{ label: `${d.slice(0, 4)} operating profit (forecast)`, value: fmtEur(fc.fyEbitCents), hint: `on revenue ${fmtEur(fc.fyRevenueCents)}`, tone: tone(fc.fyEbitCents < 0) } as const] : [])] });
+    const ue = unitEconomics(w).filter((x) => x.monthlyUnits > 0);
+    if (ue.length) blocks.push({ kind: 'bullets', title: 'What each car earns today', items: ue.map((x) => ({ text: `${x.name}: ${eurUnit(x.contributionCents)} contribution per car, ${eurUnit(x.marginCents)} left after plant costs (${int(x.monthlyUnits)} cars/month).`, tone: tone(x.marginCents < 0) })) });
+    return { title: 'Profit & loss: where the money goes', summary: `No month has closed yet this year. Last year Asterion made ${fmtEur(FY2026.ebitCents)} operating profit on ${fmtEur(FY2026.revenueCents)} revenue (${pct(FY2026.ebitCents / FY2026.revenueCents)}).${fc ? ` This year’s forecast: ${fmtEur(fc.fyEbitCents)}.` : ''}`, blocks };
   }
   const p = plBreakdown(ytdMv);
   const t = plTotals(p);
@@ -428,9 +431,37 @@ function buildMarketing({ w }: Ctx): Built {
   if (campaigns.length) {
     blocks.push({ kind: 'table', title: 'Campaigns', columns: ['Campaign', 'Model', 'Period', 'Spend', 'Extra cars sold (est.)', 'Extra contribution (est.)'], numeric: [false, false, false, true, true, true], rows: campaigns.map((c) => [c.name, short(byId(w.models, c.modelId)?.name ?? c.modelId), `${fmtDate(c.start)} – ${fmtDate(c.end)}`, fmtEur(c.spendCents), int(c.extraUnits), fmtEur(c.extraContributionCents)]), note: 'Extra cars = the campaign’s demand uplift × the demand there would have been without it (engine estimate). Contribution = extra cars × contribution per car.' });
   } else blocks.push({ kind: 'text', text: 'No targeted campaign has run yet. A campaign raises one model’s demand for a few weeks; it pays off when the model has stock to sell and a healthy margin per car.' });
+  // Is it worth it? Compare demand at the current budget with a little more, and with almost none.
   const ue = unitEconomics(w);
+  const contrib = live.reduce((a, m) => a + (ue.find((x) => x.modelId === m.id)?.contributionCents ?? 0) * modelMonthlyDemand(w, m, d), 0) / Math.max(1, live.reduce((a, m) => a + modelMonthlyDemand(w, m, d), 0));
+  const demandAt = (cents: number) => {
+    const keep = w.meta.marketingMonthlyCents;
+    try {
+      w.meta.marketingMonthlyCents = cents;
+      return live.reduce((a, m) => a + modelMonthlyDemand(w, m, d), 0);
+    } finally {
+      w.meta.marketingMonthlyCents = keep;
+    }
+  };
+  const now = demandAt(w.meta.marketingMonthlyCents);
+  const none = demandAt(Math.round(PARAMS.marketingBaselineMonthlyCents * 0.05));
+  const more = demandAt(w.meta.marketingMonthlyCents + mEur(1));
+  const less = demandAt(Math.max(0, w.meta.marketingMonthlyCents - mEur(1)));
+  const gain = Math.round((more - now) * contrib);
+  const loss = Math.round((now - less) * contrib);
+  blocks.push({
+    kind: 'bullets',
+    title: 'Is it worth it?',
+    items: [
+      { text: `The current budget supports about ${int(now - none)} cars a month compared with almost no marketing (worth ≈${fmtEur(Math.round((now - none) * contrib))} contribution a month, for ${fmtEur(w.meta.marketingMonthlyCents)} spent).`, tone: (now - none) * contrib > w.meta.marketingMonthlyCents ? 'good' : 'warning' },
+      { text: `Another €1m a month would sell ≈${int(more - now)} more cars (≈${fmtEur(gain)} contribution): ${gain > mEur(1) ? 'it would pay for itself' : 'it would not pay for itself'}.`, tone: gain > mEur(1) ? 'good' : null },
+      { text: `€1m a month less would lose ≈${int(now - less)} cars (≈${fmtEur(loss)} contribution): ${loss < mEur(1) ? 'a saving worth considering' : 'a false saving'}.`, tone: loss < mEur(1) ? 'good' : null },
+      { text: 'Extra demand only becomes sales when there are cars: check stock days before spending more.' },
+    ],
+  });
   blocks.push({ kind: 'table', title: 'Where marketing money works best', columns: ['Model', 'Contribution per car', 'Stock days', 'Verdict'], numeric: [false, true, true, false], rows: live.map((m) => { const dem = modelMonthlyDemand(w, m, d); const days = dem > 0 ? Math.round(((m.dealerStock + m.fgUnits) / dem) * 30) : 0; const c = ue.find((x) => x.modelId === m.id)?.contributionCents ?? 0; return [short(m.name), eurUnit(c), days, days > 60 && c > 0 ? 'Good target: stock to clear, positive margin' : days < 30 ? 'Not now: too little stock to sell' : c <= 0 ? 'Poor: each extra car loses money' : 'Neutral']; }) });
-  return { title: 'Marketing performance', summary: `Budget ${fmtEur(w.meta.marketingMonthlyCents)}/month, estimated ${effect >= 0 ? '+' : ''}${pct(effect)} demand vs baseline; ${campaigns.length} campaign(s) on record.`, blocks };
+  const campLine = campaigns.length ? ` ${campaigns.length} campaign(s) so far: ${int(campaigns.reduce((a, c) => a + c.extraUnits, 0))} extra cars, ${fmtEur(campaigns.reduce((a, c) => a + c.extraContributionCents, 0))} extra contribution for ${fmtEur(campaigns.reduce((a, c) => a + c.spendCents, 0))} spent.` : ' No targeted campaign yet.';
+  return { title: 'Marketing performance', summary: `The ${fmtEur(w.meta.marketingMonthlyCents)}/month budget supports about ${int(now - none)} cars a month; another €1m would ${gain > mEur(1) ? '' : 'not '}pay for itself.${campLine}`, blocks };
 }
 
 function buildProduction({ w }: Ctx): Built {

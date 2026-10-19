@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { api } from '../api';
 import { BarSeriesChart, LineSeriesChart } from '../components/charts';
+import { DecideLink } from '../components/DecideLink';
 import { Card, D, Empty, Est, Loading, Status, Tabs } from '../components/ui';
 import { useGame, useView } from '../ctx';
 import { eurM, fmtDate, fmtEur, fmtInt, fmtX, titleCase } from '../format';
@@ -249,11 +250,8 @@ function Debt({ fin }: { fin: any }) {
           </table>
         </Card>
         <Card title="Revolving credit facility" sub="The treasury draws automatically to meet payments and sweeps surplus cash back at month end. You can also draw or repay manually.">
-          <div className="row">
-            <input type="number" placeholder="€m" value={amt} onChange={(e) => setAmt(e.target.value)} style={{ width: 120 }} aria-label="RCF amount in € millions" />
-            <button className="btn" disabled={!amt} onClick={() => propose('request_financing', { kind: 'rcf_draw', amountCents: Math.round(Number(amt) * 1e8), rationale: 'Liquidity buffer' })}>Draw…</button>
-            <button className="btn" disabled={!amt} onClick={() => propose('request_financing', { kind: 'rcf_repay', amountCents: Math.round(Number(amt) * 1e8), rationale: 'Reduce interest' })}>Repay…</button>
-          </div>
+          <div className="small">Drawn {fmtEur(fin.rcf?.drawnCents ?? 0)}.</div>
+          <div style={{ marginTop: 8 }}><DecideLink area="money">Draw or repay →</DecideLink></div>
         </Card>
       </div>
     </div>
@@ -279,15 +277,10 @@ function Financing({ fin }: { fin: any }) {
   const [why, setWhy] = useState('');
   return (
     <div className="stack">
-      <Card title="Request financing" sub="A request is a proposal. Money arrives only after the counterparty makes an offer, you accept it, and it is executed.">
-        <div className="form-grid">
-          <label className="field">Instrument<select value={kind} onChange={(e) => setKind(e.target.value)}>{KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
-          <label className="field">Amount (€m)<input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></label>
-          <label className="field">Tenor (years)<input type="number" min={1} max={10} value={tenor} onChange={(e) => setTenor(e.target.value)} /></label>
-          <label className="field" style={{ gridColumn: '1 / -1' }}>Rationale<input type="text" value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Use of proceeds" /></label>
-        </div>
-        <div className="small muted" style={{ margin: '6px 0' }}>{KINDS.find((k) => k[0] === kind)?.[2]} Your verified personal liquid assets: {fmtEur(fin.ceo.personalLiquidCents)}.</div>
-        <button className="btn primary" onClick={() => propose('request_financing', { kind, amountCents: ['covenant_waiver', 'rcf_extension'].includes(kind) ? 0 : Math.round(Number(amount) * 1e8), tenorYears: Number(tenor), rationale: why || 'Refinancing and liquidity' })}>Preview request</button>
+      <Card title="Raising money" sub="A request is a proposal. Money arrives only after the counterparty makes an offer, you accept it, and it is executed.">
+        <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>{KINDS.map(([k, l, h]) => <li key={k}><strong>{l}</strong> — {h}</li>)}</ul>
+        <div className="small muted" style={{ margin: '6px 0' }}>Your verified personal liquid assets: {fmtEur(fin.ceo.personalLiquidCents)}.</div>
+        <DecideLink area="money">Request financing or answer an offer →</DecideLink>
       </Card>
       <Card title="Requests & offers" flush>
         {fin.financing.length === 0 ? <Empty>No financing requests yet.</Empty> : (
@@ -305,12 +298,7 @@ function Financing({ fin }: { fin: any }) {
                     {f.decisionReason && <div className="tiny">{f.decisionReason}</div>}
                   </td>
                   <td>
-                    {f.status === 'offered' && (
-                      <div className="row">
-                        <button className="btn sm primary" onClick={() => propose('accept_financing', { financingId: f.id })}>Accept…</button>
-                        <button className="btn sm" onClick={() => propose('decline_financing', { financingId: f.id })}>Decline</button>
-                      </div>
-                    )}
+                    {f.status === 'offered' && <DecideLink area="money">Answer →</DecideLink>}
                   </td>
                 </tr>
               ))}

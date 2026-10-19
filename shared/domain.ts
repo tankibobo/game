@@ -980,6 +980,8 @@ export interface SnapshotData {
   unitsWholesale: number;
   unitsRetail: number;
   headcount: number;
+  sharePriceCents?: Cents;
+  boardConfidence?: number;
   /** The month's P&L movements by account (debit-positive); absent for pre-game history. */
   byAccount?: Record<string, Cents>;
   /** Per-model volumes and prices for the month; absent for pre-game history. */

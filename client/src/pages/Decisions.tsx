@@ -103,11 +103,13 @@ function People({ d }: { d: any }) {
 }
 
 function Products({ d }: { d: any }) {
-  const { propose } = useGame();
+  const { propose, go } = useGame();
   const models = d.models.filter((m: any) => m.status === 'in_production');
   const [price, setPrice] = useState({ model: models[0]?.id ?? '', eur: '' });
   const [mkt, setMkt] = useState('');
+  const [camp, setCamp] = useState({ model: models[0]?.id ?? '', m: '', weeks: '6', name: '' });
   const m = d.models.find((x: any) => x.id === price.model);
+  const running = d.campaigns.filter((c: any) => c.running);
   return (
     <div className="stack">
       <Card>
@@ -121,15 +123,69 @@ function Products({ d }: { d: any }) {
         </Decision>
       </Card>
       <Card>
-        <Decision title="Set the marketing budget" who="You — immediate" hint="Monthly brand and product marketing for all models. More spending lifts demand, with diminishing returns.">
+        <Decision title="Launch a marketing campaign" who="You up to your spending limit — immediate" hint="A burst of TV, digital and dealer events for one model, for a few weeks. It lifts that model’s demand only while it runs, and only turns into sales if there are cars to sell. Each campaign’s extra cars and return are measured in the Marketing performance report.">
+          <div className="form-grid">
+            <label className="field">Model<select value={camp.model} onChange={(e) => setCamp({ ...camp, model: e.target.value })}>{models.map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+            <label className="field">Spend (€m, 1–40)<input type="number" min={1} max={40} value={camp.m} onChange={(e) => setCamp({ ...camp, m: e.target.value })} placeholder="e.g. 8" /></label>
+            <label className="field">Weeks (2–16)<input type="number" min={2} max={16} value={camp.weeks} onChange={(e) => setCamp({ ...camp, weeks: e.target.value })} /></label>
+            <label className="field">Name (optional)<input type="text" value={camp.name} onChange={(e) => setCamp({ ...camp, name: e.target.value })} placeholder="e.g. Spring Kora offensive" /></label>
+            <div><button className="btn primary" disabled={!(num(camp.m) >= 1) || !(num(camp.weeks) >= 2)} onClick={() => propose('launch_campaign', { modelId: camp.model, spendCents: Math.round(num(camp.m) * 1e8), weeks: Math.round(num(camp.weeks)), name: camp.name.trim() || undefined, reason: 'Campaign' })}>Preview…</button></div>
+          </div>
+          {d.campaigns.length > 0 && (
+            <div className="list" style={{ marginTop: 10 }}>
+              {d.campaigns.map((c: any) => (
+                <div key={c.id} className="list-item">
+                  <div style={{ flex: 1 }}>
+                    <div className="small strong">{c.name} {c.running ? <span className="pill good">running</span> : <span className="pill">ended</span>}</div>
+                    <div className="tiny muted">{c.modelName} · {fmtEur(c.spendCents)} · {fmtDate(c.start)} → {fmtDate(c.end)} · {fmtInt(c.extraUnits ?? 0)} extra cars so far, {fmtEur(c.extraContributionCents ?? 0)} extra contribution</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {running.length === 0 && d.campaigns.length === 0 && <div className="tiny muted" style={{ marginTop: 6 }}>No campaigns yet.</div>}
+        </Decision>
+      </Card>
+      <Card>
+        <Decision title="Set the always-on marketing budget" who="You — immediate" hint="Monthly brand and product marketing across all models. More spending lifts demand everywhere, with diminishing returns. Whether it pays: ask Camille Garnier, or open the Marketing performance report.">
           <div className="form-grid">
             <label className="field">€ million per month<input type="number" step={1} value={mkt} onChange={(e) => setMkt(e.target.value)} placeholder={String(Math.round(d.marketingMonthlyCents / 1e8))} /></label>
             <div><button className="btn primary" disabled={!(num(mkt) >= 0)} onClick={() => propose('set_marketing_budget', { monthlyCents: Math.round(num(mkt) * 1e8), reason: 'Marketing budget decision' })}>Preview…</button></div>
           </div>
-          <div className="tiny muted" style={{ marginTop: 6 }}>Current budget {fmtEur(d.marketingMonthlyCents)} per month.</div>
+          <div className="tiny muted" style={{ marginTop: 6 }}>Current budget {fmtEur(d.marketingMonthlyCents)} per month. <a href="#" onClick={(e) => { e.preventDefault(); go('company', 'dept:sales'); }}>Marketing performance →</a></div>
         </Decision>
       </Card>
     </div>
+  );
+}
+
+const TARGET_LABEL: Record<string, string> = { factory: 'Plant', line: 'Production line', model: 'Model', model_or_all: 'Model (or all)' };
+
+/** Design a project of your own: what, where, how big. */
+function OwnProject({ d }: { d: any }) {
+  const { propose } = useGame();
+  const [f, setF] = useState({ kind: d.customKinds[0]?.key ?? '', target: '', size: 'medium', name: '', why: '' });
+  const k = d.customKinds.find((x: any) => x.key === f.kind);
+  const targets: any[] = !k ? [] : k.target === 'factory' ? d.factories : k.target === 'line' ? d.lines : k.target === 'model' || k.target === 'model_or_all' ? d.models.filter((m: any) => m.status === 'in_production' || m.status === 'development') : [];
+  const target = targets.some((t) => t.id === f.target) ? f.target : k?.target === 'model_or_all' ? '' : targets[0]?.id ?? '';
+  const sz = k?.sizes[f.size];
+  return (
+    <Decision title="Design your own project" who={`You decide up to ${fmtEur(d.limits.ceoSpendCents)}; above that the board`} hint="Choose what to improve, where, and how big. The engineering office sizes the budget, team and duration and estimates the effect; the real result is measured at completion (typically 60–120% of the estimate). Repeating the same improvement in the same place gives less each time.">
+      <div className="form-grid">
+        <label className="field" style={{ gridColumn: '1 / -1' }}>What to improve<select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value, target: '' })}>{d.customKinds.map((x: any) => <option key={x.key} value={x.key}>{x.label}</option>)}</select></label>
+        {k && <div className="tiny sub" style={{ gridColumn: '1 / -1' }}>{k.description} Led by {k.owner}.</div>}
+        {k && k.target !== 'none' && (
+          <label className="field">{TARGET_LABEL[k.target]}<select value={target} onChange={(e) => setF({ ...f, target: e.target.value })}>
+            {k.target === 'model_or_all' && <option value="">All models</option>}
+            {targets.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select></label>
+        )}
+        <label className="field">Size<select value={f.size} onChange={(e) => setF({ ...f, size: e.target.value })}>{k && Object.entries(k.sizes).map(([key, s]: any) => <option key={key} value={key}>{s.label} — {fmtEur(s.budgetCents)}, {s.fte} engineers, ~{s.months} months</option>)}</select></label>
+        <label className="field">Name (optional)<input type="text" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Brno lean wave 1" /></label>
+        <div><button className="btn primary" disabled={!k} onClick={() => propose('start_custom_project', { kind: f.kind, targetId: k?.target === 'none' ? null : target || null, size: f.size, name: f.name.trim(), reason: f.why.trim() || undefined })}>Preview…</button></div>
+      </div>
+      {sz && <div className="tiny muted" style={{ marginTop: 6 }}>{sz.fte} engineers needed; {fmtInt(d.freeEngineers)} are free. The preview shows the expected effect in numbers.</div>}
+    </Decision>
   );
 }
 
@@ -185,21 +241,44 @@ function Projects({ d }: { d: any }) {
   return (
     <div className="stack">
       <Card>
-        <Decision title="Start a new project" who={`You decide up to ${fmtEur(d.limits.ceoSpendCents)}; above that the board`} hint={<>Each project needs free engineers for its whole duration ({fmtInt(d.freeEngineers)} free now). Projects above your spending limit go to the board meeting on {fmtDate(d.submissionMeeting)} and start that day if approved.</>}>
+        <Decision title="Start a project from the catalogue" who={`You decide up to ${fmtEur(d.limits.ceoSpendCents)}; above that the board`} hint={<>Projects your team has already scoped. Each needs free engineers for its whole duration ({fmtInt(d.freeEngineers)} free now). Projects above your spending limit go to the board meeting on {fmtDate(d.submissionMeeting)} and start that day if approved.</>}>
           <div className="list">
-            {d.templates.map((t: any) => (
+            {d.templates.filter((t: any) => !t.completed).map((t: any) => (
               <div key={t.key} className="list-item" style={{ alignItems: 'flex-start' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="small strong">{t.name} <span className="pill">{t.strategy}</span>{t.needsBoard && <span className="pill warning" style={{ marginLeft: 4 }}>board</span>}</div>
+                  <div className="small strong">{t.name} <span className="pill">{t.strategy}</span>{t.needsBoard && <span className="pill warning" style={{ marginLeft: 4 }}>board</span>}{t.running && <span className="pill good" style={{ marginLeft: 4 }}>under way</span>}</div>
+                  <div className="tiny sub">{t.objective}</div>
                   <div className="tiny muted">{fmtEur(t.budgetCents)} · {t.fte} engineers · ~{t.months} months — {t.tradeoffs}</div>
+                  {t.effects?.length > 0 && <div className="tiny">When done: {t.effects.join('; ')}.</div>}
                   {t.replaces.length > 0 && <div className="tiny" style={{ color: 'var(--warning-text)' }}>Replaces the proposed {t.replaces.join(', ')} (withdrawn when this starts).</div>}
-                  {t.reason && <div className="tiny" style={{ color: 'var(--critical-text)' }}>{t.reason}</div>}
+                  {t.reason && !t.running && <div className="tiny" style={{ color: 'var(--critical-text)' }}>{t.reason}</div>}
                 </div>
                 <button className="btn sm" disabled={!t.available} onClick={() => propose('start_project', { templateKey: t.key })}>Preview…</button>
               </div>
             ))}
           </div>
+          {d.templates.some((t: any) => t.completed) && (
+            <details style={{ marginTop: 8 }}>
+              <summary className="small">Completed ({d.templates.filter((t: any) => t.completed).length})</summary>
+              <div className="list">
+                {d.templates.filter((t: any) => t.completed).map((t: any) => {
+                  const p = d.projects.find((x: any) => x.status === 'completed' && x.name === t.name);
+                  return (
+                    <div key={t.key} className="list-item" style={{ alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1 }}>
+                        <div className="small strong">✓ {t.name} <span className="tiny muted">completed {fmtDate(t.completed)}</span></div>
+                        {(p?.impact ?? []).length > 0 ? <div className="tiny">What it changed: {p.impact.join('; ')}.</div> : <div className="tiny muted">{t.reason}</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
+          )}
         </Decision>
+      </Card>
+      <Card>
+        <OwnProject d={d} />
       </Card>
       <Card>
         <Decision title="Approve a proposed project" who="You (or the board above your limit)" hint="Projects prepared by your team that wait for a go-ahead. Nothing happens until you approve.">
@@ -528,7 +607,7 @@ export function Decisions() {
                     <input type="checkbox" aria-label={`Select ${a.summary}`} checked={bundle.includes(a.id)} onChange={() => setBundle((x) => (x.includes(a.id) ? x.filter((y) => y !== a.id) : [...x, a.id]))} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="small strong">{a.summary}{a.needsBoard && <span className="pill warning" style={{ marginLeft: 6 }}>board</span>}</div>
-                      <div className="tiny muted">{a.source === 'llm_proposal' ? `Proposed in a meeting by ${d.characters.find((c: any) => c.id === a.actorId)?.name ?? 'a colleague'}` : 'Your draft'} · {fmtDate(a.simDate)}</div>
+                      <div className="tiny muted">{a.source === 'llm_proposal' ? `Proposed in a meeting by ${d.characters.find((c: any) => c.id === a.actorId)?.name ?? 'a colleague'}` : a.source === 'initiative' ? `Prepared on their own initiative by ${d.characters.find((c: any) => c.id === a.actorId)?.name ?? 'a colleague'}` : 'Your draft'} · {fmtDate(a.simDate)}</div>
                       <div className="tiny sub">{a.nextStep}</div>
                     </div>
                     <button className="btn sm primary" onClick={() => reviewAction(a.id)}>Review…</button>

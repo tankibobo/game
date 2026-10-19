@@ -36,11 +36,16 @@ interface Report {
 const PRIORITY: Record<number, [string, string]> = { 1: ['Do now', 'critical'], 2: ['Soon', 'warning'], 3: ['When you can', 'info'], 4: ['Optional', ''] };
 const STATE: Record<Objective['state'], [string, string]> = { met: ['Met', 'good'], on_track: ['On track', 'info'], at_risk: ['At risk', 'warning'], missed: ['Missed', 'critical'] };
 
-/** The Coach: what to do next and why, computed from the live game. */
+/**
+ * The Coach's read of the company: where the board stands, what to look at
+ * first and why. The reasoning comes first; the exact steps and a ready-made
+ * preview only when the player asks for them ("Show me how").
+ */
 export function Coach() {
   const { propose, go } = useGame();
   const { data, error, loading } = useView<Report>('/coach');
   const [open, setOpen] = useState<string | null>(null);
+  const [how, setHow] = useState<string[]>([]);
   if (error) return <div className="small" style={{ color: 'var(--critical-text)' }}>{error}</div>;
   if (!data) return <div className="small muted">{loading ? 'Analysing your company…' : 'Start or load a game to get advice.'}</div>;
   const c = data.confidence;
@@ -70,7 +75,7 @@ export function Coach() {
       </section>
 
       <section>
-        <h3 className="coach-h">What to do now</h3>
+        <h3 className="coach-h">Where I'd look first</h3>
         {shown.length === 0 && <div className="small muted">Nothing pressing. Advance time and keep an eye on the forecast.</div>}
         <div className="stack" style={{ gap: 8 }}>
           {shown.map((a) => {
@@ -86,13 +91,22 @@ export function Coach() {
                 {expanded && (
                   <div className="coach-card-body">
                     <div className="small">{a.why}</div>
-                    {a.steps.length > 0 && <ol className="small">{a.steps.map((s, i) => <li key={i}>{s}</li>)}</ol>}
                     {a.deadline && <div className="tiny muted">Deadline: {fmtDate(a.deadline)}</div>}
-                    <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                      {a.action && <button className="btn sm primary" onClick={() => propose(a.action!.type, a.action!.payload, { rationale: a.action!.rationale })}>Preview: {a.action.label}</button>}
-                      {a.link && <button className="btn sm" onClick={() => go(a.link!.page, a.link!.param ?? null)}>Open {a.link.label}</button>}
-                    </div>
-                    {a.action && <div className="tiny muted" style={{ marginTop: 4 }}>Nothing happens until you confirm in the preview.</div>}
+                    {!how.includes(a.id) ? (
+                      <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                        <button className="btn sm ghost" onClick={() => setHow((x) => [...x, a.id])}>Show me how</button>
+                        {a.link && <button className="btn sm" onClick={() => go(a.link!.page, a.link!.param ?? null)}>Open {a.link.label}</button>}
+                      </div>
+                    ) : (
+                      <>
+                        {a.steps.length > 0 && <ol className="small">{a.steps.map((s, i) => <li key={i}>{s}</li>)}</ol>}
+                        <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                          {a.action && <button className="btn sm primary" onClick={() => propose(a.action!.type, a.action!.payload, { rationale: a.action!.rationale })}>Preview: {a.action.label}</button>}
+                          {a.link && <button className="btn sm" onClick={() => go(a.link!.page, a.link!.param ?? null)}>Open {a.link.label}</button>}
+                        </div>
+                        {a.action && <div className="tiny muted" style={{ marginTop: 4 }}>Nothing happens until you confirm in the preview.</div>}
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -124,7 +138,7 @@ export function Coach() {
         <summary className="small strong">How to win: principles</summary>
         <ul className="small" style={{ margin: '6px 0 0 18px', padding: 0 }}>{data.principles.map((p, i) => <li key={i} style={{ marginBottom: 4 }}>{p}</li>)}</ul>
       </details>
-      <div className="tiny muted">The Coach reads the live simulation (forecast, board, negotiations, factories) and updates after every decision and every day you advance.</div>
+      <div className="tiny muted">I read the live simulation (forecast, board, negotiations, factories) and update after every decision and every day you advance. I’m not part of the game: nobody at Asterion hears what I say.</div>
     </div>
   );
 }

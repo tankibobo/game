@@ -23,6 +23,7 @@ import { mandateObjectives, mandateScore } from '../engine/mandate';
 import { ACTIONS } from '../actions/registry';
 import { PROJECT_TEMPLATES } from '../actions/templates';
 import { templateStatus } from './decisions';
+import { describeEffect } from '../reports/catalog';
 import { pendingSignatures } from './game';
 import { rowToSharedDocument } from './documents';
 import { unitMaterialCost, FY2026 } from '../scenario/initial';
@@ -174,6 +175,8 @@ export function products(db: DB) {
     segments: w.segments.map((s) => ({ ...s, marketMonthly: Math.round(segmentMarketMonthly(w, s, d)), powertrainPrefNow: powertrainPref(w, s, d), shares: segmentShares(w, s.id, d).map((r) => ({ ...r, share: Math.round(r.share * 10000) / 10000, monthlyUnits: Math.round(r.monthlyUnits) })) })),
     competitorProducts: w.competitorProducts,
     competitors: w.competitors,
+    marketingMonthlyCents: w.meta.marketingMonthlyCents,
+    marketingEfficiency: w.meta.marketingEfficiency ?? 1,
     templates: PROJECT_TEMPLATES.map((t) => ({ key: t.key, name: t.name, strategy: t.strategy, objective: t.objective, budgetCents: t.budgetCents, fte: t.fte, durationDays: t.durationDays, tradeoffs: t.tradeoffs, active: w.projects.some((p) => p.templateKey === t.key && !['completed', 'cancelled'].includes(p.status)), ...templateStatus(w, t.key) })),
     projects: w.projects.filter((p) => p.linkedModelId).map((p) => ({ id: p.id, name: p.name, linkedModelId: p.linkedModelId, status: p.status, targetDate: p.targetDate, forecastDate: p.forecastDate })),
   };
@@ -185,7 +188,7 @@ export function projectsView(db: DB) {
   return {
     today: w.meta.currentDate,
     engineering: { freeFte: Math.floor(engineeringFreeFte(w)), sustainingFte: SUSTAINING_ENGINEERING_FTE, headcount: w.departments.filter((x) => x.kind === 'engineering').reduce((a, x) => a + x.headcount, 0) },
-    projects: w.projects.map((p) => ({ ...p, progress: progressOf(w, p.id), milestones: milestonesOf(w, p.id), issues: w.issues.filter((i) => i.projectId === p.id || i.linked.some((l) => l.id === p.id)), history: history.filter((h) => h.projectId === p.id) })),
+    projects: w.projects.map((p) => ({ ...p, expected: (p.completionEffects ?? []).map((e) => describeEffect(w, e)), progress: progressOf(w, p.id), milestones: milestonesOf(w, p.id), issues: w.issues.filter((i) => i.projectId === p.id || i.linked.some((l) => l.id === p.id)), history: history.filter((h) => h.projectId === p.id) })),
     issues: w.issues,
     templates: PROJECT_TEMPLATES.map((t) => ({ key: t.key, name: t.name, strategy: t.strategy, budgetCents: t.budgetCents, fte: t.fte, durationDays: t.durationDays, tradeoffs: t.tradeoffs, objective: t.objective, ...templateStatus(w, t.key) })),
   };

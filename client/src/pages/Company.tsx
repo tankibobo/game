@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { Card, Empty, Loading, Progress, Status, Tabs } from '../components/ui';
 import { ShareForm } from '../components/ShareForm';
+import { DivisionsOverview } from './Divisions';
 import { useGame, useView } from '../ctx';
 import { fmtDate, fmtEur, fmtInt, titleCase } from '../format';
 
@@ -24,7 +25,12 @@ export function Company() {
   const [tab, setTab] = useState<'people' | 'org' | 'board' | 'rules' | 'share'>('people');
   const [sel, setSel] = useState<string | null>(nav.param ?? null);
   useEffect(() => {
-    if (nav.param) setSel(nav.param);
+    if (!nav.param) return;
+    if (nav.param.startsWith('dept:')) {
+      setTab('org');
+      setTimeout(() => document.getElementById(`dept-${nav.param!.slice(5)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+    } else if (nav.param === 'share') setTab('share');
+    else setSel(nav.param);
   }, [nav.param]);
   if (!d) return <Loading error={error} />;
   const chars = d.characters as any[];
@@ -39,7 +45,7 @@ export function Company() {
           <p>People, organisation, board and approval rights. Trust is shaped by what you do — kept and broken promises, decisions and how you treat people.</p>
         </div>
       </div>
-      <Tabs value={tab} onChange={setTab} tabs={[['people', 'People'], ['org', 'Departments'], ['board', 'Board'], ['rules', 'Approval rights'], ['share', 'Share a document']]} />
+      <Tabs value={tab} onChange={setTab} tabs={[['people', 'People'], ['org', 'Divisions & workforce'], ['board', 'Board'], ['rules', 'Approval rights'], ['share', 'Share a document']]} />
       {tab === 'people' && (
         <div className="grid g-main">
           <div className="stack">
@@ -126,8 +132,9 @@ export function Company() {
           </div>
         </div>
       )}
+      {tab === 'org' && <DivisionsOverview characters={chars} />}
       {tab === 'org' && (
-        <Card title="Departments & workforce" flush>
+        <Card title="Workforce by department" flush className="mt">
           <div className="table-wrap">
             <table>
               <thead><tr><th>Department</th><th>Kind</th><th>Head</th><th className="num">Headcount</th><th className="num">Cost / head / yr</th><th className="num">Annual payroll</th><th>Morale</th><th>Pipeline</th></tr></thead>
@@ -152,7 +159,7 @@ export function Company() {
             </table>
           </div>
           <div className="row tiny muted" style={{ padding: '6px 14px' }}>
-            <span>Hire or reduce headcount in Decisions → People &amp; communication (also Operations → Workforce). Payroll is base cost × wage index (collective agreements raise it).</span>
+            <span>Hire or reduce headcount in Decisions → People &amp; communication. Payroll is base cost × wage index (collective agreements raise it).</span>
             <span className="spacer" />
             <button className="btn sm" onClick={() => go('decisions', 'people')}>Hire or reduce…</button>
           </div>

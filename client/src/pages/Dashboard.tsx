@@ -12,11 +12,11 @@ function GettingStarted({ onHide }: { onHide: () => void }) {
     <Card title="Getting started" sub="How a turn works — hide this once you are comfortable." actions={<button className="btn sm ghost" onClick={onHide}>Hide</button>}>
       <ol className="small" style={{ margin: '0 0 0 18px', padding: 0 }}>
         <li>Read your messages in <a href="#" onClick={(e) => { e.preventDefault(); go('inbox'); }}>Inbox &amp; meetings</a> — they describe the situation and what people need from you.</li>
-        <li>Talk to people with <strong>Meet</strong> (Company page). They answer from what they know; they can propose decisions and you can send them reports.</li>
+        <li>Talk to people: <strong>Ask someone</strong> (top bar) for a quick question, or <strong>Meet</strong> (People &amp; divisions) for a conversation. They answer from their department’s figures, attach reports, can propose decisions — and also write to you on their own.</li>
         <li>Open <a href="#" onClick={(e) => { e.preventDefault(); go('decisions'); }}>Decisions</a> to see everything you can decide. <strong>Preview…</strong> never changes anything: it shows the consequences, who approves and what happens next.</li>
         <li>Decisions above your authority go to the board when you confirm them; the review shows how each director is likely to vote. If approved they are carried out on the meeting day.</li>
         <li>Advance time with <strong>+1 day / +1 week / +1 month</strong> and read the briefing. Dated effects (hires, consultations, board votes) appear in Decisions → In progress.</li>
-        <li>Not sure what to do? Open the <a href="#" onClick={(e) => { e.preventDefault(); openGuide('coach'); }}>Coach</a> (? Guide): it lists what to fix first, why, and lets you preview each decision in one click. To learn how something works, ask the Guide, e.g. “How do I hire more people?”.</li>
+        <li>Not sure what to do? Open the <a href="#" onClick={(e) => { e.preventDefault(); openGuide('coach'); }}>Coach</a> (“? Coach” at the top). It sits outside the game: ask it anything — “Why am I losing money?”, “How do I hire more people?”, “What should I do first?”. For a quick question to one of your executives, use “Ask someone”.</li>
       </ol>
     </Card>
   );

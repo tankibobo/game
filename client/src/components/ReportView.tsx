@@ -111,3 +111,14 @@ export function DocumentView({ doc, people }: { doc: any; people?: { id: string;
     </div>
   );
 }
+
+/** The headline and key figures of a report, for an overview. */
+export function ReportGlance({ report }: { report: Report }) {
+  const k = report.blocks.find((b) => b.kind === 'kpis');
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="small">{report.summary}</div>
+      {k && <Block b={k} />}
+    </div>
+  );
+}

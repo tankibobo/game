@@ -14,6 +14,8 @@ import { byId } from '../engine/world';
 import { staffingNeed } from '../actions/defs/people';
 import { supersededProposals } from '../actions/defs/projects';
 import { PROJECT_TEMPLATES } from '../actions/templates';
+import { CUSTOM_KINDS, SIZES, type CustomSize } from '../actions/custom';
+import { describeEffect } from '../reports/catalog';
 import { ACTION_BY_TYPE } from '../actions/registry';
 import { actionView, pendingSignatures } from './game';
 
@@ -105,8 +107,10 @@ export function decisionsView(db: DB) {
     lines: w.lines.map((l) => ({ id: l.id, name: l.name, factoryId: l.factoryId, status: l.status, plannedDailyRate: l.plannedDailyRate, maxDailyRate: l.maxDailyRate })),
     factories: w.factories.map((f) => ({ id: f.id, name: f.name })),
     marketingMonthlyCents: w.meta.marketingMonthlyCents,
-    templates: PROJECT_TEMPLATES.map((t) => ({ key: t.key, name: t.name, strategy: t.strategy, objective: t.objective, tradeoffs: t.tradeoffs, budgetCents: t.budgetCents, fte: t.fte, months: Math.round(t.durationDays / 30), ...templateStatus(w, t.key) })),
-    projects: w.projects.map((p) => ({ id: p.id, name: p.name, status: p.status, kind: p.kind, targetDate: p.targetDate, staffingFte: Math.round(p.staffingFte), budgetCents: p.budgetCents, spentCents: p.spentCents })),
+    campaigns: (w.meta.campaigns ?? []).slice(-12).reverse().map((c) => ({ ...c, modelName: byId(w.models, c.modelId)?.name ?? c.modelId, running: c.end >= d })),
+    customKinds: CUSTOM_KINDS.map((k) => ({ key: k.key, label: k.label, description: k.description, target: k.target, owner: byId(w.characters, k.ownerId)?.name ?? k.ownerId, sizes: Object.fromEntries((Object.keys(SIZES) as CustomSize[]).map((sz) => [sz, { label: SIZES[sz].label, budgetCents: Math.round((SIZES[sz].budget * k.costFactor) / 1e6) * 1e6, fte: SIZES[sz].fte, months: Math.round(SIZES[sz].days / 30) }])) })),
+    templates: PROJECT_TEMPLATES.map((t) => ({ key: t.key, name: t.name, strategy: t.strategy, objective: t.objective, effects: t.effects.map((e) => describeEffect(w, e)), tradeoffs: t.tradeoffs, budgetCents: t.budgetCents, fte: t.fte, months: Math.round(t.durationDays / 30), ...templateStatus(w, t.key) })),
+    projects: w.projects.map((p) => ({ id: p.id, name: p.name, status: p.status, kind: p.kind, targetDate: p.targetDate, completedDate: p.completedDate, impact: p.impact ?? [], staffingFte: Math.round(p.staffingFte), budgetCents: p.budgetCents, spentCents: p.spentCents })),
     issues: w.issues.filter((i) => !['resolved', 'closed'].includes(i.status)).map((i) => ({ id: i.id, title: i.title, severity: i.severity, options: i.options.filter((o) => !i.chosenOptions.includes(o.key)).map((o) => ({ key: o.key, label: o.label, costCents: o.costCents, description: o.description })) })),
     financing: w.financing.filter((f) => !['withdrawn', 'expired'].includes(f.status)).map((f) => ({ id: f.id, kind: f.kind, counterparty: f.counterparty, status: f.status, requestedCents: f.requestedCents, offer: f.offer })),
     negotiations: w.negotiations.map((n) => ({ id: n.id, title: n.title, status: n.status, counterpartyName: byId(w.characters, n.counterpartyId)?.name ?? n.counterpartyId, deadline: n.deadline })),

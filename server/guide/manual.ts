@@ -1,10 +1,10 @@
 /**
  * The player's manual: how to do things in the game, step by step. The
- * in-game guide answers "how do I…?" questions from these entries; strategic
- * advice comes from the Coach (advisor.ts), which reads the live game.
+ * in-game guide (the Coach) answers "how do I…?" questions from these entries;
+ * strategic advice comes from its analysis of the live game (advisor.ts).
  */
 
-export type GuidePage = 'dashboard' | 'decisions' | 'inbox' | 'company' | 'products' | 'projects' | 'operations' | 'finance' | 'world' | 'history' | 'saves';
+export type GuidePage = 'dashboard' | 'decisions' | 'inbox' | 'news' | 'company' | 'products' | 'projects' | 'operations' | 'finance' | 'world' | 'history' | 'saves';
 
 export interface ManualTopic {
   id: string;
@@ -21,12 +21,13 @@ export const PAGE_LABEL: Record<GuidePage, string> = {
   dashboard: 'Executive dashboard',
   decisions: 'Decisions',
   inbox: 'Inbox & meetings',
-  company: 'Company',
-  products: 'Products',
+  news: 'News',
+  company: 'People & divisions',
+  products: 'Products & marketing',
   projects: 'Projects',
   operations: 'Operations',
   finance: 'Finance',
-  world: 'World',
+  world: 'Markets & world',
   history: 'History',
   saves: 'Saves',
 };
@@ -40,11 +41,11 @@ export const MANUAL: ManualTopic[] = [
     steps: [
       'Read the opening messages in Inbox & meetings → Messages.',
       'Look at the Executive dashboard: cash, liquidity, forecast, board confidence, risks.',
-      'Take decisions on the Decisions page (or with the buttons on each page). Every decision shows its consequences before anything happens.',
-      'Talk to people with “Meet” (Company page or Inbox & meetings → Meetings).',
+      'Take decisions on the Decisions page — every decision is taken there; the other pages show the state of the company and link to it. Every decision shows its consequences before anything happens.',
+      'For a quick question, click “Ask someone” at the top — no meeting needed; executives answer with their department’s report. For a longer conversation, “Meet” someone (People & divisions or Inbox & meetings → Meetings).',
       'Advance time with +1 day, +1 week or +1 month at the top. Nothing happens while time stands still.',
       'After each advance, read the briefing: what happened, what needs attention, what is coming up.',
-      'Open ? Guide → Coach whenever you are unsure what to do: it lists what to fix first and why, with a one-click preview of each decision.',
+      'Open ? Coach whenever you are unsure: ask it anything about the game. It is outside the game — nobody in the company hears it — and gives advice and hints rather than playing for you.',
     ],
     pages: ['dashboard', 'decisions', 'inbox'],
     notes: ['The game is lost if missed payments last too long (insolvency) or if board confidence stays below the danger line at consecutive regular board meetings (dismissal — 20 and two meetings on Standard).'],
@@ -68,7 +69,7 @@ export const MANUAL: ManualTopic[] = [
     keywords: ['decision', 'decide', 'confirm', 'approve', 'execute', 'preview', 'consequences', 'how do decisions work', 'action', 'nothing happens'],
     summary: 'Every decision is first previewed: the simulation checks it, calculates the consequences and says who must approve it. Nothing changes until you confirm.',
     steps: [
-      'Open Decisions → Take a decision and choose an area on the left (or use the buttons on the Products, Projects, Operations or Finance pages).',
+      'Open Decisions → Take a decision and choose an area on the left (the “Change in Decisions →” links on other pages open the right area).',
       'Fill in the form and click “Preview…”.',
       'Read “What happens next”, the calculated consequences and the approvals.',
       'Click “Approve & execute” if it is within your authority — it happens immediately.',
@@ -76,7 +77,7 @@ export const MANUAL: ManualTopic[] = [
       'Or click “Keep as draft” to decide later, “Change parameters” to adjust it, or “Reject” to drop it.',
     ],
     pages: ['decisions'],
-    notes: ['Your authority: spending up to €50m per decision, bank debt up to €100m, hiring up to 500 people, restructuring up to 300 positions. Above that the board decides (Company → Approval rights).'],
+    notes: ['Your authority: spending up to €50m per decision, bank debt up to €100m, hiring up to 500 people, restructuring up to 300 positions. Above that the board decides (People & divisions → Approval rights).'],
   },
   {
     id: 'drafts',
@@ -126,7 +127,7 @@ export const MANUAL: ManualTopic[] = [
     steps: [
       'Before submitting: open the decision’s review (“Preview…” or “Review…”) and read “How the board is likely to vote” and the tips below it.',
       'After a vote: read the “Board meeting — minutes” message in Inbox & meetings → Messages, or Inbox & meetings → Board for each vote.',
-      'To talk to a director, open Company → People and click “Meet” next to their name.',
+      'To talk to a director, open People & divisions → People and click “Meet” next to their name.',
     ],
     pages: ['inbox', 'company'],
     notes: ['Typical reasons: the cash a decision needs while liquidity is tight, profit it costs, jobs it cuts, dilution, execution risk. Unavoidable decisions (legal compliance, a blocked programme, a crew shortage) get more support.'],
@@ -154,7 +155,7 @@ export const MANUAL: ManualTopic[] = [
       'Open Decisions → In progress and find the item marked “Approved by the board, not possible yet” — the reason is shown.',
       'Fix the cause (for example free engineers by re-planning another project, or hire engineers).',
       'Click “Execute now”, or simply advance time: it is retried automatically.',
-      'If it was an endorsement-only plan, prepare the actual decision (for example Decisions → Projects & issues → Start a new project) and confirm it.',
+      'If it was an endorsement-only plan, prepare the actual decision (for example Decisions → Projects & issues → Start a project from the catalogue) and confirm it.',
     ],
     pages: ['decisions'],
     notes: ['An approval stays valid for 90 days; after that it lapses and you must submit again.'],
@@ -177,7 +178,7 @@ export const MANUAL: ManualTopic[] = [
     keywords: ['hire', 'hiring', 'recruit', 'more people', 'more staff', 'workers', 'employees', 'headcount', 'crew', 'operators', 'staff'],
     summary: 'Hiring adds people to a department after a lead time (plants ≈45 days, engineering ≈90 days). Up to 500 at once is your decision; more needs the board.',
     steps: [
-      'Open Decisions → Take a decision → People & communication → “Hire staff” (also on Operations → Workforce → Workforce plan).',
+      'Open Decisions → Take a decision → People & communication → “Hire staff” (Operations → Workforce links there).',
       'Choose the department; the line below shows its headcount and whether its plan is short of people.',
       'Enter how many people and an optional reason, then click “Preview…”.',
       'Read the cost and the arrival date, then click “Approve & execute” (or “Submit to the board” above 500).',
@@ -192,7 +193,7 @@ export const MANUAL: ManualTopic[] = [
     keywords: ['cut', 'cuts', 'layoff', 'lay off', 'fire', 'redundancy', 'redundancies', 'reduce headcount', 'restructure', 'restructuring', 'job cuts', 'voluntary departure', 'downsizing'],
     summary: 'A reduction starts a 60-day consultation; people leave and severance is paid at the end. Up to 300 positions is your decision; more needs the board.',
     steps: [
-      'Open Decisions → Take a decision → People & communication → “Reduce headcount” (also on Operations → Workforce → Workforce plan).',
+      'Open Decisions → Take a decision → People & communication → “Reduce headcount”.',
       'Choose the department, the number and the type (voluntary departures or compulsory redundancies), then “Preview…”.',
       'Read the provision, the monthly saving and the effect on morale and the union, then confirm.',
       'The departure date appears in Decisions → In progress.',
@@ -215,14 +216,14 @@ export const MANUAL: ManualTopic[] = [
     id: 'start-project',
     title: 'Start a new project',
     keywords: ['start project', 'new project', 'launch project', 'programme', 'program', 'begin project', 'kora gt', 'cost-down', 'automation', 'compact ev', 'second battery', 'direct sales', 'quality programme', 'brno expansion'],
-    summary: 'New projects come from a catalogue with fixed budget, engineers and duration. Above €50m the board must approve.',
+    summary: 'Start a project from the catalogue (scoped by your team, with fixed budget, engineers and duration) or design your own. Above €50m the board must approve. Completed catalogue projects leave the list: their effects are in place.',
     steps: [
-      'Open Decisions → Take a decision → Projects & issues → “Start a new project” (also Projects → Start a project, or Products → Start a product programme).',
-      'Each entry shows budget, engineers, duration and, in red, why it cannot start now.',
+      'Open Decisions → Take a decision → Projects & issues → “Start a project from the catalogue”.',
+      'Each entry shows what it does, budget, engineers, duration, what it changes when done and, in red, why it cannot start now. Completed projects are listed under “Completed” with what they changed.',
       'Click “Preview…”, read the consequences, then “Approve & execute” or “Submit to the board”.',
       'Once started it appears on the Projects page with its milestones.',
     ],
-    pages: ['decisions', 'projects', 'products'],
+    pages: ['decisions', 'projects'],
   },
   {
     id: 'vela',
@@ -231,7 +232,7 @@ export const MANUAL: ManualTopic[] = [
     summary: 'Two ways to make the Vela sellable after 29 November 2027: approve the proposed “Vela Euro 7 compliance” project (€42m, 160 engineers), or start the “Vela mild-hybrid refresh (incl. Euro 7)” (€165m, 220 engineers, needs the board) which replaces it.',
     steps: [
       'For the compliance project: Decisions → Projects & issues → “Approve a proposed project” → Vela Euro 7 compliance → “Preview…” → “Approve & execute”.',
-      'For the hybrid refresh: Decisions → Projects & issues → “Start a new project” → Vela mild-hybrid refresh → “Preview…” → write your case → “Submit to the board”.',
+      'For the hybrid refresh: Decisions → Projects & issues → “Start a project from the catalogue” → Vela mild-hybrid refresh → “Preview…” → write your case → “Submit to the board”.',
       'After the board approves (meeting day), the refresh starts automatically and the proposed compliance project is withdrawn. Check Projects.',
     ],
     pages: ['decisions', 'projects'],
@@ -254,7 +255,7 @@ export const MANUAL: ManualTopic[] = [
     keywords: ['delay', 'accelerate', 'speed up', 'replan', 're-plan', 'reschedule', 'target date', 'staffing', 'descope', 'move the date', 'faster'],
     summary: 'Change a project’s target date, engineers, budget or remaining scope. A date alone does not make work faster; more engineers have diminishing returns.',
     steps: [
-      'Open Decisions → Projects & issues → “Re-plan a project” (or Projects → select the project → “Re-plan this project”).',
+      'Open Decisions → Projects & issues → “Re-plan a project”.',
       'Fill in only what you want to change and give a reason, then “Preview…”.',
       'Compare the forecast completion before and after, then confirm.',
     ],
@@ -279,7 +280,7 @@ export const MANUAL: ManualTopic[] = [
   {
     id: 'issues',
     title: 'Deal with an issue (thermal tests, inverter, software…)',
-    keywords: ['issue', 'problem', 'thermal', 'inverter', 'recall', 'investigate', 'campaign', 'bms', 'software backlog', 'fix', 'risk'],
+    keywords: ['issue', 'problem', 'thermal', 'inverter', 'recall', 'investigate', 'recall campaign', 'bms', 'software backlog', 'fix', 'risk'],
     summary: 'Issues come with documented response options, each with a cost and effect.',
     steps: [
       'Open Projects → Issue log (or Decisions → Projects & issues → “Respond to an issue”).',
@@ -293,16 +294,21 @@ export const MANUAL: ManualTopic[] = [
     title: 'Change a car’s price',
     keywords: ['price', 'pricing', 'discount', 'raise price', 'lower price', 'net price', 'cheaper'],
     summary: 'Set the net price dealers pay per car; demand reacts against competitors.',
-    steps: ['Open Products (or Decisions → Products & pricing).', 'Enter the new net price for the model and click “Preview”/“Preview…”.', 'Read the estimated effect on demand and margin, then confirm.'],
-    pages: ['products', 'decisions'],
+    steps: ['Open Decisions → Products & pricing → “Change a model’s price”.', 'Choose the model, enter the new net price and click “Preview…”.', 'Read the estimated effect on demand and margin, then confirm. Products & marketing shows the margins and market shares.'],
+    pages: ['decisions', 'products'],
   },
   {
     id: 'marketing',
-    title: 'Change the marketing budget',
-    keywords: ['marketing', 'advertising', 'promotion', 'brand'],
-    summary: 'A monthly budget for all models; more spending lifts demand with diminishing returns.',
-    steps: ['Open Products → Marketing budget (or Decisions → Products & pricing).', 'Enter € million per month, “Preview…”, confirm.'],
-    pages: ['products', 'decisions'],
+    title: 'Marketing: the budget, campaigns and whether it works',
+    keywords: ['marketing', 'advertising', 'promotion', 'brand', 'campaign', 'campaigns', 'launch a campaign', 'marketing campaign', 'does marketing work', 'marketing useful', 'ads', 'tv'],
+    summary: 'Two levers. The always-on budget lifts demand for every model, with diminishing returns. A campaign lifts one model for 2–16 weeks — it only sells if there are cars. The Marketing performance report measures every campaign: extra cars sold and extra contribution versus its cost.',
+    steps: [
+      'Open Decisions → Products & pricing → “Launch a marketing campaign”: choose the model, the spend (€1–40m) and the weeks, then “Preview…” — it estimates the extra cars and whether it pays back.',
+      'To change the always-on budget: Decisions → Products & pricing → “Set the always-on marketing budget”.',
+      'To see whether it works: Products & marketing → Marketing & campaigns, or People & divisions → Divisions → Sales & marketing, or ask Camille Garnier.',
+    ],
+    pages: ['decisions', 'products'],
+    notes: ['Campaigns are best used to clear stock or support a launch; a campaign for a model that is sold out mostly creates waiting lists.', 'A Digital CRM or digital-marketing project makes every marketing euro work harder.'],
   },
   {
     id: 'production',
@@ -310,9 +316,9 @@ export const MANUAL: ManualTopic[] = [
     keywords: ['production', 'rate', 'build more', 'build less', 'output', 'line', 'downtime', 'stop plant', 'stock', 'inventory', 'overproduction'],
     summary: 'Each line has a planned rate in cars per working day. Downtime stops a plant for a period.',
     steps: [
-      'Open Operations → Plants & lines (or Decisions → Production).',
-      'For a rate: on Operations → Plants & lines enter the new rate next to the line and click “Preview” (or use Decisions → Production), then confirm.',
-      'For downtime: choose the factory and dates (“Plan downtime…” on Operations, or Decisions → Production), then confirm.',
+      'Open Decisions → Production (Operations → Plants & lines shows each line and links there).',
+      'For a rate: choose the line, enter cars per day, “Preview…”, confirm.',
+      'For downtime: choose the factory and dates, “Preview…”, confirm.',
     ],
     pages: ['operations', 'decisions'],
     notes: ['A plant needs enough crew for its planned rate; Operations shows crew and absenteeism.'],
@@ -322,7 +328,7 @@ export const MANUAL: ManualTopic[] = [
     title: 'Draw or repay the credit line',
     keywords: ['rcf', 'credit line', 'revolving', 'draw', 'repay', 'overdraft', 'cash now', 'extend', 'extension'],
     summary: 'The €500m revolving credit facility gives cash immediately; undrawn amounts already count as liquidity. It expires on 31 March 2029 unless you extend it.',
-    steps: ['Open Decisions → Money → “Draw or repay the credit line” (or Finance → Debt & covenants → Revolving credit facility).', 'Enter the amount in € millions and click “Draw…” or “Repay…”, then confirm.', 'To extend it: Decisions → Money → “Raise financing”, type “Extend the credit line (RCF)”, then preview and confirm; accept the banks’ offer when it arrives.'],
+    steps: ['Open Decisions → Money → “Draw or repay the credit line”.', 'Enter the amount in € millions and click “Draw…” or “Repay…”, then confirm.', 'To extend it: Decisions → Money → “Raise financing”, type “Extend the credit line (RCF)”, then preview and confirm; accept the banks’ offer when it arrives.'],
     pages: ['finance', 'decisions'],
   },
   {
@@ -331,33 +337,34 @@ export const MANUAL: ManualTopic[] = [
     keywords: ['financing', 'raise money', 'loan', 'bond', 'refinance', 'refinancing', 'equity', 'rights issue', 'shares', 'sale and leaseback', 'leaseback', 'shareholder loan', 'debt', 'borrow', 'waiver', 'covenant waiver', 'money', 'extend the rcf', 'rcf extension', 'extend credit line'],
     summary: 'You request financing; the lender or market reviews it and answers with an offer after a few weeks; you then accept or decline. Bonds, equity and asset sales need the board first.',
     steps: [
-      'Open Decisions → Money → “Raise financing” (or Finance → Financing → Request financing).',
+      'Open Decisions → Money → “Raise financing” (Finance → Financing explains each instrument).',
       'Choose the type, amount, tenor and purpose, then “Preview…” and confirm (or submit to the board).',
-      'Advance time; when the offer arrives time pauses (message and Decisions → In progress). Accept it under Decisions → Money → “Respond to a financing offer” or Finance → Financing → Requests & offers, before it expires.',
+      'Advance time; when the offer arrives time pauses (message and Decisions → In progress). Accept it under Decisions → Money → “Respond to a financing offer” before it expires.',
     ],
     pages: ['decisions', 'finance'],
     notes: ['Bond investors stop buying above about 4x net leverage and banks refuse covenant waivers above 4.5x; new equity (rights issue) is then the way to bring leverage down.', 'The €500m credit line expires in March 2029: “Extend the credit line (RCF)” asks the banks for three more years (possible in its last two years, not while a covenant is breached).'],
   },
   {
     id: 'negotiate',
-    title: 'Negotiate (union, Voltaris, Hanseatic, dealers)',
-    keywords: ['negotiate', 'negotiation', 'offer', 'counteroffer', 'union', 'wage', 'voltaris', 'battery supply', 'hanseatic', 'dealer agreement', 'deal', 'terms'],
-    summary: 'Negotiations have terms (volumes, prices, wages…). You make offers; the counterparty accepts, counters or refuses. An agreement must then be signed.',
+    title: 'Negotiate a deal (suppliers, union, dealers, fleet customers, partners)',
+    keywords: ['negotiate', 'negotiation', 'offer', 'counteroffer', 'union', 'wage', 'voltaris', 'battery supply', 'hanseatic', 'dealer agreement', 'deal', 'terms', 'create a deal', 'my own deal', 'fleet', 'rental', 'leasing', 'eurofleet', 'contract assembly', 'shenlong', 'walk away', 'withdraw'],
+    summary: 'You can open deals yourself: supply contracts, the wage agreement, the dealer agreement, fleet orders with a rental/leasing company (EuroFleet: many cars at a discount), and contract assembly for a partner at Lyon (Shenlong: a fee per car, using Lyon capacity and crews). Each has terms; you make offers; the counterparty accepts, counters or refuses. An agreement must then be signed.',
     steps: [
-      'Open Inbox & meetings → Negotiations and select the negotiation (start a new one under “Open a new negotiation”, or Decisions → Deals & contracts).',
+      'Open Decisions → Deals & contracts: each possible deal is described, grouped by counterparty. Click “Open talks…” to start one.',
+      'Then open Inbox & meetings → Negotiations and select it.',
       'Set each term in the offer form, add an argument (facts and alternatives help), and click “Table this offer”.',
       'Read the response and the latest counter-position in “Rounds”; repeat until agreed.',
       'Sign the agreement under Inbox & meetings → Contracts → “Sign…”.',
     ],
     pages: ['inbox', 'decisions'],
-    notes: ['You can also negotiate from a meeting with the counterparty: the offer form appears beside the conversation.'],
+    notes: ['You can also negotiate from a meeting with the counterparty: the offer form appears beside the conversation.', 'You can “Walk away…” from open talks, or “Decline…” an agreement you no longer want — the counterparty will remember.', 'Fleet orders are delivered from factory stock, so build enough cars; contract assembly takes Lyon line capacity and needs crews.'],
   },
   {
     id: 'sign-contract',
     title: 'Sign an agreement',
     keywords: ['sign', 'contract', 'agreement', 'signature', 'agreed'],
-    summary: 'An agreement reached in a negotiation has no effect until it is signed.',
-    steps: ['Open Inbox & meetings → Contracts (or Decisions → Deals & contracts → “Sign an agreed contract”).', 'Click “Sign…” next to the agreed contract, read the consequences, confirm (or submit to the board if required).'],
+    summary: 'An agreement reached at the table binds nobody until it is signed: signing makes it a contract and only then does the simulation apply its terms. Legal reviews the terms in the signing preview. Unsigned agreements lapse after 45 days and the counterparty loses trust.',
+    steps: ['Open Inbox & meetings → Contracts (or Decisions → Deals & contracts → “Sign an agreed contract”).', 'Click “Sign…” next to the agreed contract, read the consequences and the legal review, confirm (or submit to the board if required).', 'Once signed it disappears from the list; if the signature needs the board, the line says when it will be voted.'],
     pages: ['inbox', 'decisions'],
   },
   {
@@ -366,7 +373,7 @@ export const MANUAL: ManualTopic[] = [
     keywords: ['talk', 'meet', 'meeting', 'conversation', 'chat', 'speak', 'ask', 'call', 'discuss'],
     summary: 'Meetings are conversations with a character. They answer in character from what they know; nothing they say changes the company, but they can propose decisions and remember what you say.',
     steps: [
-      'Open Company → People (or Inbox & meetings → Meetings) and click “Meet” next to the person. A message from someone also has a “Meet …” button.',
+      'Open People & divisions → People (or Inbox & meetings → Meetings) and click “Meet” next to the person. A message from someone also has a “Meet …” button.',
       'Type your message and press Enter.',
       'Proposals they make appear under their reply with “Review consequences…”.',
       'Earlier meetings are listed in Inbox & meetings → Meetings.',
@@ -377,11 +384,11 @@ export const MANUAL: ManualTopic[] = [
     id: 'share',
     title: 'Send a report, document or memo to someone',
     keywords: ['send', 'report', 'document', 'share', 'forecast to', 'memo', 'email', 'inform', 'tell everyone', 'circulate', 'send them', 'give them data', 'financials', 'status report'],
-    summary: 'You can share reports built from the company’s current figures (forecast, financial results, liquidity, project status, production, workforce, board proposal, negotiation status, decision log) or write a memo. Recipients remember it in later meetings; colleagues learn it was circulated.',
+    summary: 'A document is one or more reports from the catalogue (P&L breakdown, unit economics, cash, forecast, sales, marketing performance, production, quality, supply, workforce, projects, contracts, negotiations, board proposals…) plus an optional memo. Every report is described and can be previewed before you send it. Recipients remember it; colleagues also send documents to each other and to you, and ask you for reports by name — a “Send it” button appears under their reply.',
     steps: [
       'In a meeting: use the “Share a document” card on the right — it goes to the person you are meeting and is noted in the conversation.',
-      'To several people: Decisions → People & communication → “Share a document or send a memo” (also on the Company page).',
-      'Choose what to send (and which project/negotiation/proposal if asked), tick the recipients, add a note, click “Send”.',
+      'To several people: Decisions → People & communication → “Share a document or send a memo” (also People & divisions → Share a document).',
+      'Tick the reports to include (“Preview” shows exactly what they will read), choose the project/negotiation where asked, tick the recipients, add a memo, click “Send”.',
     ],
     pages: ['decisions', 'company'],
     notes: ['Sharing never changes the company — it changes what people know.'],
@@ -403,7 +410,7 @@ export const MANUAL: ManualTopic[] = [
     title: 'See and build trust',
     keywords: ['trust', 'relationship', 'confidence in me', 'like me', 'morale'],
     summary: 'Each person’s trust in you moves with kept and broken promises, decisions that affect them and how you treat them in meetings. Trust affects how candid they are and, for directors, their votes.',
-    steps: ['Open Company → People: the “Trust in you” column.', 'Click a person to see their profile, objectives and memories.'],
+    steps: ['Open People & divisions → People: the “Trust in you” column.', 'Click a person to see their profile, objectives and memories.'],
     pages: ['company'],
   },
   {
@@ -413,7 +420,7 @@ export const MANUAL: ManualTopic[] = [
     summary: 'Board confidence (0–100) moves towards a target at every regular meeting (and a little each month). The target comes from the forecast versus the board plan (operating profit, 12-month liquidity, the Eon launch date and battery supply), covenant breaches, promises to directors and directors’ trust. On Standard, below 20 at two regular meetings in a row means dismissal; any meeting at or above the line resets the count.',
     steps: [
       'See it in the top bar and on the Executive dashboard → Board, with each driver and its effect.',
-      'Open ? Guide → Coach: it shows where confidence is heading at the next meeting and what to fix first.',
+      'Open ? Coach: its “Coach’s read” shows where confidence is heading at the next meeting and what to look at first.',
       'The minutes after each meeting explain the change.',
     ],
     pages: ['dashboard', 'inbox'],
@@ -425,7 +432,7 @@ export const MANUAL: ManualTopic[] = [
     keywords: ['how to win', 'win', 'win the game', 'winning', 'objective', 'objectives', 'keep getting fired', 'fired', 'losing', 'lose', 'too hard', 'difficult', 'advice', 'strategy', 'tips', 'coach', 'what should i do', 'mandate', 'renewal', 'final review', 'score', 'grade'],
     summary: 'You win when the board renews your three-year mandate at the final review (31 December 2029): it scores seven objectives out of 100 and renews you at 60 or more on Standard (50 Relaxed, 65 Hard). The Coach tracks the score live and tells you what to do next.',
     steps: [
-      'Open ? Guide → Coach (or Executive dashboard → Your mandate → “Coach”). Work through the “Do now” items first; each has a “Preview” button that prepares the decision for you to check and confirm.',
+      'Open ? Coach (or Executive dashboard → Your mandate → “Coach”). Its read of your company lists what to look at first; open an item for the reasoning, and “Show me how” if you want the steps and a ready-made preview.',
       'In the first two months, fix the inherited problems: secure Eon battery supply (Voltaris), fix the thermal validation issue, approve the Vela Euro 7 project, match production to demand, settle the wage deal and request refinancing for the 2028 bond.',
       'Every month: advance time, accept financing offers when time pauses, sign agreements, and re-check the Coach — production rates in particular need adjusting as demand moves.',
       'Before each board meeting: deliver what the chair asked for (a recovery plan if requested), keep promises, and meet directors whose trust is low.',
@@ -475,11 +482,12 @@ export const MANUAL: ManualTopic[] = [
   },
   {
     id: 'market',
-    title: 'See the market and competitors',
-    keywords: ['market', 'competitors', 'competition', 'segment', 'share', 'regulation', 'co2', 'world', 'macro'],
-    summary: 'The World page shows segments, competitors, regulation and the economy; Products shows market shares.',
-    steps: ['Open World: Markets, Competitors, Regulation & developments and the Event catalogue.', 'Open Products for market shares per segment.'],
-    pages: ['world', 'products'],
+    title: 'See the market, competitors and the news',
+    keywords: ['market', 'competitors', 'competition', 'segment', 'share', 'regulation', 'co2', 'world', 'macro', 'news', 'newspaper', 'events', 'share price', 'stock price', 'press'],
+    summary: 'News is the trade paper: each month’s events about Asterion, competitors (promotions, recalls, failures) and markets (tariffs, rates, regulation, our share price), each with “What it means for Asterion”. Markets & world shows segments, competitors, regulation and the economy in detail.',
+    steps: ['Open News for the monthly editions, our share price and the competitors’ situation.', 'Open Markets & world for segments, competitors, regulation and the catalogue of events that can happen.', 'Products & marketing shows our share of each segment.'],
+    pages: ['news', 'world', 'products'],
+    notes: ['A competitor’s price promotion takes share from us for two months; a recall or a failure gives share back. The share price moves with results, liquidity, the Eon and board confidence, and a rights issue is priced off it.'],
   },
   {
     id: 'top-bar',
@@ -496,6 +504,77 @@ export const MANUAL: ManualTopic[] = [
     summary: 'The game saves continuously. You can snapshot the current state to another slot and load it later, or start a new game with another scenario, difficulty or seed.',
     steps: ['Open Saves.', '“Save snapshot” copies the current game; “Load” switches to a slot; “Start new game” begins again (choose the scenario, difficulty and seed first).'],
     pages: ['saves'],
+  },
+  {
+    id: 'ask',
+    title: 'Ask someone a quick question',
+    keywords: ['quick question', 'ask someone', 'ask the cfo', 'ask', 'advice from', 'question to', 'without a meeting', 'quick advice', 'minor advice'],
+    summary: 'No need to arrange a meeting for a small question: “Ask someone” at the top of every page sends one question to anyone. Executives answer from their own department’s figures and attach the report — with figures, tables and charts.',
+    steps: [
+      'Click “Ask someone” in the top bar (or an “Ask …” button on a page).',
+      'Choose who to ask — the list shows what each executive knows best — type the question and press Enter.',
+      'Read the answer and the attached report. If they ask you for a document, click “Send it”. “Continue as a meeting” turns it into a full conversation.',
+    ],
+    pages: ['dashboard'],
+    notes: ['Who knows what: Holm — P&L, cash, debt; Garnier — sales, marketing, pricing; Marchetti — plants, production, quality; Okafor — workforce, morale, union; Wierzbicki — projects, CO₂, Euro 7; Ferrer — the Eon; Lindqvist — suppliers; Laurent — contracts.'],
+  },
+  {
+    id: 'losing-money',
+    title: 'Why am I losing money? (where the money goes)',
+    keywords: ['losing money', 'lose money', 'loss', 'losses', 'where does the money go', 'money goes', 'unprofitable', 'not profitable', 'profit', 'break even', 'break-even', 'costs', 'cost breakdown', 'why negative', 'margin per car', 'unit economics'],
+    summary: 'Finance → Where the money goes breaks the year down: a waterfall from revenue to net result, every cost line with its share, monthly results, and what each car earns by model (price, materials, warranty, logistics, then labour and plant costs spread over the cars built). It ends with the break-even volume and the biggest levers.',
+    steps: [
+      'Open Finance → Where the money goes.',
+      'Read the waterfall top to bottom: which costs eat the revenue.',
+      'Read the unit economics: a model with a negative contribution loses money on every car; fixed plant costs fall per car as volume rises.',
+      'Ask the CFO (link on the page or “Ask someone”) for the report and his view.',
+    ],
+    pages: ['finance'],
+    notes: ['Typical causes: plants running far below capacity (fixed costs spread over too few cars), prices below competitors’ (lost volume) or too low for the materials, idle crews, heavy interest.'],
+  },
+  {
+    id: 'own-project',
+    title: 'Design your own project',
+    keywords: ['own project', 'my own project', 'custom project', 'design a project', 'create a project', 'new kind of project', 'improve a plant', 'lean', 'efficiency', 'line capacity', 'model update', 'design to cost'],
+    summary: 'Besides the catalogue you can design a project: choose what to improve (plant efficiency, line capacity, model update, design-to-cost, quality, CO₂, digital marketing, dealer network, people & workplace), where, and how big. The engineering office sizes it and estimates the effect; the real effect is measured at completion (typically 60–120% of the estimate). Repeating the same improvement on the same target gives less each time.',
+    steps: [
+      'Open Decisions → Projects & issues → “Design your own project”.',
+      'Choose what to improve, the plant/line/model where needed, and the size (small, medium, large).',
+      'Click “Preview…”: it shows the budget, engineers, completion date and the expected effect in numbers. Confirm (or submit to the board above €50m).',
+      'When it completes, Projects → the project → “What it changed” shows the measured before → after.',
+    ],
+    pages: ['decisions', 'projects'],
+  },
+  {
+    id: 'project-effects',
+    title: 'What did my project change?',
+    keywords: ['no effect', 'no visible effect', 'project did nothing', 'what changed', 'project effect', 'completed project', 'impact', 'automation of lyon', 'selling platform', 'online sales', 'still proposed'],
+    summary: 'Every completed project changes the simulation permanently — costs, capacity, crews, appeal, quality, CO₂, marketing efficiency, features of the cars — and the change is measured and shown. People affected react (a union over automation, dealers over direct sales). A completed catalogue project is no longer offered.',
+    steps: [
+      'Open Projects, select the completed project and read “What it changed” (before → after).',
+      'The project manager’s completion report in Inbox & meetings → Messages says the same and what to do next.',
+      'Products & marketing → “What’s in the cars” lists features added by projects.',
+    ],
+    pages: ['projects', 'inbox', 'products'],
+  },
+  {
+    id: 'team-initiative',
+    title: 'Executives acting on their own (reports, suggestions, complaints)',
+    keywords: ['proactive', 'initiative', 'on their own', 'suggest', 'suggestions', 'complain', 'complaints', 'monthly report', 'reports from', 'not dynamic', 'employees do nothing'],
+    summary: 'Your executives act on their own: the CFO and sales director send monthly reports, others quarterly; they prepare proposals when they see a problem (production, a campaign, hiring, funding), react to your decisions (price changes, cuts, cancelled projects or deals) and remind you of deadlines and unsigned agreements.',
+    steps: [
+      'Read Inbox & meetings → Messages: reports come with the document attached.',
+      'Proposals they prepared wait in Decisions → Your drafts, marked “Prepared on their own initiative by …”. Review, confirm or reject them.',
+    ],
+    pages: ['inbox', 'decisions'],
+  },
+  {
+    id: 'divisions',
+    title: 'What each division does',
+    keywords: ['divisions', 'departments', 'what does marketing do', 'what does legal do', 'legal', 'law', 'lawyer', 'general counsel', 'why sign', 'finance department', 'hr', 'purchasing', 'organisation', 'organization'],
+    summary: 'People & divisions → Divisions & workforce explains each division (Finance, Sales & marketing, Operations, People, Engineering & projects, Purchasing, Legal): what it does for you, why it matters, its key figures right now (“Is it working?”) and the decisions that belong to it.',
+    steps: ['Open People & divisions → Divisions & workforce.', 'Each card shows the head (with an “Ask” button), the live figures and links to the related decisions.'],
+    pages: ['company'],
   },
   {
     id: 'claude',

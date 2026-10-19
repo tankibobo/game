@@ -1,49 +1,8 @@
 import { useState } from 'react';
 import { Card, D, Loading, Progress, Status, Tabs } from '../components/ui';
-import { useGame, useView } from '../ctx';
+import { useView } from '../ctx';
+import { DecideLink } from '../components/DecideLink';
 import { addDays, fmtDate, fmtEur, fmtInt, titleCase } from '../format';
-
-function RateEditor({ l }: { l: any }) {
-  const { propose } = useGame();
-  const [v, setV] = useState(String(l.plannedDailyRate));
-  return (
-    <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
-      <input type="number" min={0} max={l.maxDailyRate} value={v} onChange={(e) => setV(e.target.value)} style={{ width: 72 }} aria-label={`Planned daily rate for ${l.name}`} />
-      <button className="btn sm" onClick={() => propose('adjust_production', { lineId: l.id, plannedDailyRate: Math.round(Number(v)), reason: 'Production plan change' })}>Preview</button>
-    </div>
-  );
-}
-
-function Downtime({ f, today }: { f: any; today: string }) {
-  const { propose } = useGame();
-  const [s, setS] = useState(addDays(today, 7));
-  const [e, setE] = useState(addDays(today, 11));
-  return (
-    <div className="row small">
-      <input type="date" value={s} onChange={(x) => setS(x.target.value)} aria-label="Downtime start" />
-      <span>→</span>
-      <input type="date" value={e} onChange={(x) => setE(x.target.value)} aria-label="Downtime end" />
-      <button className="btn sm" onClick={() => propose('schedule_downtime', { factoryId: f.id, startDate: s, endDate: e, reason: 'Inventory adjustment' })}>Plan downtime…</button>
-    </div>
-  );
-}
-
-function Workforce({ dep }: { dep: any }) {
-  const { propose } = useGame();
-  const [n, setN] = useState('');
-  const [mode, setMode] = useState<'voluntary' | 'compulsory'>('voluntary');
-  return (
-    <div className="row small" style={{ flexWrap: 'nowrap' }}>
-      <input type="number" min={1} value={n} onChange={(e) => setN(e.target.value)} placeholder="people" style={{ width: 80 }} aria-label={`Headcount change for ${dep.name}`} />
-      <button className="btn sm" disabled={!n} onClick={() => propose('hire_staff', { departmentId: dep.id, headcount: Math.round(Number(n)), reason: 'Workforce plan' })}>Hire…</button>
-      <select value={mode} onChange={(e) => setMode(e.target.value as any)} aria-label="Reduction mode">
-        <option value="voluntary">voluntary</option>
-        <option value="compulsory">compulsory</option>
-      </select>
-      <button className="btn sm danger" disabled={!n} onClick={() => propose('restructure_workforce', { departmentId: dep.id, reduction: Math.round(Number(n)), mode, reason: 'Capacity adjustment' })}>Reduce…</button>
-    </div>
-  );
-}
 
 export function Operations() {
   const { data: d, error } = useView<any>('/operations');
@@ -77,7 +36,7 @@ export function Operations() {
                       <td className="num strong">{fmtInt(l.plannedDailyRate)}</td>
                       <td style={{ minWidth: 90 }}><Progress value={l.plannedDailyRate / l.maxDailyRate} /></td>
                       <td className="num">{fmtInt(l.status === 'running' || l.status === 'ramp_up' ? l.plannedDailyRate * 230 : 0)}</td>
-                      <td><RateEditor l={l} /></td>
+                      <td><DecideLink area="production">Change rate →</DecideLink></td>
                     </tr>
                   ))}
                 </tbody>
@@ -100,7 +59,7 @@ export function Operations() {
                       <div className="muted">Scheduled downtime</div>
                       {f.upcomingDowntime.length === 0 ? <div className="tiny muted">none</div> : f.upcomingDowntime.slice(0, 4).map((x: any, i: number) => <div key={i} className="tiny">{fmtDate(x.start)} → {fmtDate(x.end)} · {x.reason}</div>)}
                     </div>
-                    <Downtime f={f} today={d.today} />
+                    <DecideLink area="production">Plan downtime →</DecideLink>
                   </div>
                 </Card>
               );
@@ -188,7 +147,7 @@ export function Operations() {
                     <td className="num" style={{ color: x.morale < 45 ? 'var(--critical-text)' : undefined }}>{Math.round(x.morale)}</td>
                     <td className="num">{fmtEur(x.headcount * x.annualCostPerHeadCents)}</td>
                     <td className="small">{x.hiring.map((h: any, i: number) => <div key={i}>+{fmtInt(h.count)} by {fmtDate(h.arrivalDate)}</div>)}{x.leaving.map((h: any, i: number) => <div key={i} style={{ color: 'var(--critical-text)' }}>−{fmtInt(h.count)} on {fmtDate(h.date)}</div>)}</td>
-                    <td><Workforce dep={x} /></td>
+                    <td><DecideLink area="people">Hire / reduce →</DecideLink></td>
                   </tr>
                 ))}
               </tbody>

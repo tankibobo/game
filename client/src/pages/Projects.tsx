@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Card, D, Empty, EntityLink, Est, Loading, Progress, Sev, Status, Tabs } from '../components/ui';
 import { useGame, useView } from '../ctx';
+import { DecideLink } from '../components/DecideLink';
 import { diffDays, fmtDate, fmtEur, fmtInt, fmtPct, titleCase } from '../format';
 
 function IssueCard({ i, chars }: { i: any; chars: any[] }) {
@@ -43,33 +44,6 @@ function IssueCard({ i, chars }: { i: any; chars: any[] }) {
   );
 }
 
-function Replan({ p }: { p: any }) {
-  const { propose } = useGame();
-  const [target, setTarget] = useState(p.targetDate);
-  const [staff, setStaff] = useState('');
-  const [budget, setBudget] = useState('');
-  const [descope, setDescope] = useState('');
-  const [reason, setReason] = useState('');
-  const submit = () => {
-    const payload: any = { projectId: p.id, reason: reason || 'Re-plan decided by the CEO' };
-    if (target && target !== p.targetDate) payload.newTargetDate = target;
-    if (staff) payload.staffingDelta = Math.round(Number(staff));
-    if (budget) payload.budgetDeltaCents = Math.round(Number(budget) * 1e8);
-    if (descope) payload.descopePct = Number(descope) / 100;
-    propose('change_project_scope', payload);
-  };
-  return (
-    <div className="form-grid">
-      <label className="field">New target date<input type="date" value={target} onChange={(e) => setTarget(e.target.value)} /></label>
-      <label className="field">Staffing change (FTE, ±)<input type="number" value={staff} onChange={(e) => setStaff(e.target.value)} placeholder="e.g. 100 or −200" /></label>
-      <label className="field">Budget change (€m, ±)<input type="number" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="e.g. 40" /></label>
-      <label className="field">Descope remaining work (%)<input type="number" min={0} max={30} value={descope} onChange={(e) => setDescope(e.target.value)} placeholder="0–30" /></label>
-      <label className="field" style={{ gridColumn: '1 / -1' }}>Reason (recorded in the project history)<input type="text" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why are you changing the plan?" /></label>
-      <div><button className="btn primary" onClick={submit}>Preview consequences</button></div>
-    </div>
-  );
-}
-
 function ProjectDetail({ p, chars, today }: { p: any; chars: any[]; today: string }) {
   const { propose } = useGame();
   const name = (id: string) => chars.find((c) => c.id === id)?.name ?? id;
@@ -97,6 +71,15 @@ function ProjectDetail({ p, chars, today }: { p: any; chars: any[]; today: strin
         </div>
         {p.lastDecision && <div className="small muted" style={{ marginTop: 8 }}>Last decision: {p.lastDecision}</div>}
       </Card>
+      {p.status === 'completed' ? (
+        <Card title="What it changed" sub="Measured on completion: before → after. These changes are now part of the simulation.">
+          {(p.impact ?? []).length === 0 ? <Empty>This project completed before impacts were measured, or it had no direct effect.</Empty> : <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>{p.impact.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul>}
+        </Card>
+      ) : (p.expected ?? []).length > 0 && (
+        <Card title="What it will change" sub={p.custom ? 'Estimates: projects you design deliver 60–120% of this.' : 'Applied the day the project completes.'}>
+          <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>{p.expected.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul>
+        </Card>
+      )}
       <Card title="Milestones" flush sub="Work flows through milestones in order; a milestone closes only when its work is done and its gates are satisfied.">
         <div className="table-wrap">
           <table>
@@ -123,7 +106,7 @@ function ProjectDetail({ p, chars, today }: { p: any; chars: any[]; today: strin
           {p.risks.length > 0 && <div className="small" style={{ padding: '8px 14px' }}><strong>Risk register:</strong> {p.risks.map((r: any) => `${r.text} (${r.likelihood}/${r.impact})`).join(' · ')}</div>}
         </Card>
       )}
-      {active && <Card title="Re-plan this project" sub="A later date lets the team release engineers; more engineers have diminishing returns; a date alone does not make work go faster."><Replan p={p} /></Card>}
+      {active && <div className="row small muted">Re-plan, add budget or cancel: <DecideLink area="projects">Decisions → Projects →</DecideLink></div>}
       <Card title="Change history" flush sub="Append-only — original values are never erased.">
         {p.history.length === 0 ? <Empty>No changes recorded since the start of the game.</Empty> : (
           <table>
@@ -145,7 +128,7 @@ export function Projects() {
   const { data: d, error } = useView<any>('/projects');
   const { data: co } = useView<any>('/company');
   const { nav, propose } = useGame();
-  const [tab, setTab] = useState<'projects' | 'issues' | 'new'>('projects');
+  const [tab, setTab] = useState<'projects' | 'issues'>('projects');
   const [sel, setSel] = useState<string>('PRJ-EON');
   useEffect(() => {
     if (!nav.param) return;
@@ -168,8 +151,9 @@ export function Projects() {
           <h1>Projects, issues & roadmap</h1>
           <p>Engineering pool: {fmtInt(d.engineering.headcount)} engineers, {fmtInt(d.engineering.sustainingFte)} tied to sustaining work, <strong>{fmtInt(d.engineering.freeFte)} unassigned</strong>.</p>
         </div>
+        <DecideLink area="projects">Start a project (catalogue or your own) →</DecideLink>
       </div>
-      <Tabs value={tab} onChange={setTab} tabs={[['projects', 'Projects'], ['issues', `Issue log (${d.issues.filter((i: any) => !['resolved', 'closed'].includes(i.status)).length} open)`], ['new', 'Start a project']]} />
+      <Tabs value={tab} onChange={setTab} tabs={[['projects', 'Projects'], ['issues', `Issue log (${d.issues.filter((i: any) => !['resolved', 'closed'].includes(i.status)).length} open)`]]} />
       {tab === 'projects' && (
         <div className="grid" style={{ gridTemplateColumns: 'minmax(220px, 280px) minmax(0, 1fr)' }}>
           <Card title="Portfolio" flush>
@@ -195,21 +179,6 @@ export function Projects() {
             {[...d.issues].sort((a: any, b: any) => Number(['resolved', 'closed'].includes(a.status)) - Number(['resolved', 'closed'].includes(b.status))).map((i: any) => <IssueCard key={i.id} i={i} chars={chars} />)}
           </div>
         </Card>
-      )}
-      {tab === 'new' && (
-        <div className="grid g2">
-          {d.templates.map((t: any) => {
-            return (
-              <Card key={t.key} title={t.name} sub={t.strategy} actions={<button className="btn sm primary" disabled={t.running} onClick={() => propose('start_project', { templateKey: t.key })}>{t.running ? 'Running' : 'Preview…'}</button>}>
-                <div className="small">{t.objective}</div>
-                <div className="row small" style={{ marginTop: 6 }}><span className="pill">{fmtEur(t.budgetCents)}</span><span className="pill">{t.fte} engineers</span><span className="pill">~{Math.round(t.durationDays / 30)} months</span>{t.needsBoard && <span className="pill warning">board approval</span>}</div>
-                <div className="tiny muted" style={{ marginTop: 6 }}>{t.tradeoffs}</div>
-                {t.replaces?.length > 0 && <div className="tiny" style={{ marginTop: 4, color: 'var(--warning-text)' }}>Replaces the proposed {t.replaces.join(', ')} (withdrawn when this starts).</div>}
-                {t.reason && !t.running && <div className="tiny" style={{ marginTop: 4, color: 'var(--critical-text)' }}>Not possible now: {t.reason}</div>}
-              </Card>
-            );
-          })}
-        </div>
       )}
     </div>
   );

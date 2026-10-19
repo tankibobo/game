@@ -1,24 +1,13 @@
-import { useState } from 'react';
 import { HBarChart } from '../components/charts';
 import { Card, D, EntityLink, Est, Loading, Status } from '../components/ui';
 import { useGame, useView } from '../ctx';
 import { fmtEur, fmtInt, fmtPct } from '../format';
-
-export function PriceEditor({ m }: { m: any }) {
-  const { propose } = useGame();
-  const [v, setV] = useState(String(Math.round(m.netPriceCents / 100)));
-  return (
-    <div className="row" style={{ gap: 4, flexWrap: 'nowrap' }}>
-      <input type="number" step={100} value={v} onChange={(e) => setV(e.target.value)} style={{ width: 90 }} aria-label={`New net price for ${m.name}`} />
-      <button className="btn sm" onClick={() => propose('change_price', { modelId: m.id, netPriceCents: Math.round(Number(v) * 100), reason: 'Pricing decision' })}>Preview</button>
-    </div>
-  );
-}
+import { DecideLink } from '../components/DecideLink';
+import { LiveReport } from './Finance';
 
 export function Products() {
   const { data: d, error } = useView<any>('/products');
-  const { propose, go } = useGame();
-  const [mkt, setMkt] = useState<string>('');
+  const { go } = useGame();
   if (!d) return <Loading error={error} />;
   return (
     <div>
@@ -33,7 +22,7 @@ export function Products() {
           <table>
             <thead>
               <tr>
-                <th>Model</th><th>Status</th><th className="num">Net price</th><th className="num">Material cost</th><th className="num">Contribution / unit</th><th className="num">Margin</th><th className="num">Appeal</th><th className="num">Quality</th><th className="num">CO₂ g/km</th><th>Euro 7</th><th className="num">Demand / mo <span className="tiny">est.</span></th><th className="num">Dealer stock days</th><th>Change net price (€)</th>
+                <th>Model</th><th>Status</th><th className="num">Net price</th><th className="num">Material cost</th><th className="num">Contribution / unit</th><th className="num">Margin</th><th className="num">Appeal</th><th className="num">Quality</th><th className="num">CO₂ g/km</th><th>Euro 7</th><th className="num">Demand / mo <span className="tiny">est.</span></th><th className="num">Dealer stock days</th>
               </tr>
             </thead>
             <tbody>
@@ -51,12 +40,12 @@ export function Products() {
                   <td>{m.euro7Compliant ? <span className="pill good">yes</span> : <span className="pill critical">no</span>}</td>
                   <td className="num">{fmtInt(m.demandEstimate)}</td>
                   <td className="num" style={{ color: m.dealerStockDays > 60 ? 'var(--critical-text)' : undefined }}>{m.dealerStockDays ?? '—'}</td>
-                  <td>{m.status !== 'discontinued' && <PriceEditor m={m} />}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        <div className="row" style={{ padding: '6px 14px 0' }}><DecideLink area="products">Change a price or launch a campaign →</DecideLink></div>
         <div className="tiny muted" style={{ padding: '6px 14px' }}>Net price = revenue per vehicle invoiced to dealers (after dealer margin and VAT). Contribution = net price − materials − logistics − warranty accrual. Labour and overhead are period costs.</div>
       </Card>
 
@@ -89,29 +78,23 @@ export function Products() {
             </tbody>
           </table>
         </Card>
-        <Card title="Marketing budget">
-          <div className="small sub">Brand and product marketing across all models. Response has diminishing returns (utility ∝ ln(spend)).</div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <input type="number" placeholder="€m per month" value={mkt} onChange={(e) => setMkt(e.target.value)} style={{ width: 140 }} aria-label="Marketing budget in € millions per month" />
-            <button className="btn" disabled={!mkt} onClick={() => propose('set_marketing_budget', { monthlyCents: Math.round(Number(mkt) * 1e8), reason: 'Marketing budget decision' })}>Preview change</button>
-          </div>
-          <hr className="sep" />
-          <h3>Start a product programme</h3>
-          <div className="list">
-            {d.templates.filter((t: any) => ['vehicle_program'].includes(t.key) || ['vela_hybrid_refresh', 'kora_premium', 'compact_ev', 'quality_programme', 'direct_sales'].includes(t.key)).map((t: any) => (
-              <div key={t.key} className="list-item" style={{ padding: '8px 0' }}>
-                <div style={{ flex: 1 }}>
-                  <div className="t">{t.name} <span className="pill">{t.strategy}</span></div>
-                  <div className="tiny muted">{fmtEur(t.budgetCents)} · {t.fte} engineers · ~{Math.round(t.durationDays / 30)} months{t.needsBoard ? ' · needs board approval' : ''} — {t.tradeoffs}</div>
-                  {t.replaces?.length > 0 && <div className="tiny" style={{ color: 'var(--warning-text)' }}>Replaces the proposed {t.replaces.join(', ')} (withdrawn when this starts).</div>}
-                  {t.reason && !t.active && <div className="tiny" style={{ color: 'var(--critical-text)' }}>Not possible now: {t.reason}</div>}
-                </div>
-                <button className="btn sm" disabled={t.active} onClick={() => propose('start_project', { templateKey: t.key })}>{t.active ? 'Running' : 'Preview…'}</button>
-              </div>
-            ))}
-          </div>
+        <Card title="Marketing & campaigns" actions={<DecideLink area="products">Decide →</DecideLink>}>
+          <div className="small sub">Always-on marketing {fmtEur(d.marketingMonthlyCents)} per month{d.marketingEfficiency > 1.001 ? ` · ${Math.round((d.marketingEfficiency - 1) * 100)}% more effective thanks to completed projects` : ''}. Campaigns lift one model for a few weeks; their extra sales are measured below.</div>
+          <LiveReport reportKey="marketing" compact />
         </Card>
       </div>
+
+      <div style={{ marginTop: 14 }} />
+      <Card title="What's in the cars" sub="Features and changes on each model — completed projects add to this list." >
+        <div className="grid g3">
+          {d.models.filter((m: any) => m.status !== 'discontinued').map((m: any) => (
+            <div key={m.id}>
+              <div className="small strong">{m.name} <Status s={m.status} /></div>
+              {(m.features ?? []).length === 0 ? <div className="tiny muted">No listed features.</div> : <ul className="tiny" style={{ margin: '4px 0 0', paddingLeft: 16 }}>{m.features.map((f: string) => <li key={f}>{f}</li>)}</ul>}
+            </div>
+          ))}
+        </div>
+      </Card>
     </div>
   );
 }

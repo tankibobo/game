@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from './api';
 
-export type Page = 'dashboard' | 'decisions' | 'company' | 'products' | 'projects' | 'operations' | 'finance' | 'world' | 'inbox' | 'history' | 'meeting' | 'saves';
+export type Page = 'dashboard' | 'decisions' | 'news' | 'company' | 'products' | 'projects' | 'operations' | 'finance' | 'world' | 'inbox' | 'history' | 'meeting' | 'saves';
 
 export interface Toast {
   id: number;

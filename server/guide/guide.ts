@@ -1,11 +1,13 @@
 /**
- * The in-game guide: answers "how do I…?" questions with step-by-step
- * instructions from the manual, and "what should I do?" questions with the
- * Coach's analysis of the live game (see advisor.ts).
+ * The Coach: a guide who sits outside the game. Ask it anything about the
+ * game — how to do something, how a mechanism works, why the company is
+ * losing money, what to do next. It answers "how do I…?" from the manual,
+ * "what should I do?" from its analysis of the live game (advisor.ts), and
+ * "why…?" from the company's own reports. It gives advice and hints; it does
+ * not play the game for you. Nobody inside the game hears what it says.
  *
- * With Claude available the answer is phrased from the manual, the live facts
- * and the Coach report; otherwise the best-matching manual entry, or the
- * Coach's top advice, is returned as it is.
+ * With Claude available the answer is phrased from all of that; otherwise the
+ * best-matching manual entry, report finding or advice is returned as it is.
  */
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -19,6 +21,8 @@ import { parseStructured } from '../llm/schemas';
 import { MANUAL, PAGE_LABEL, type GuidePage, type ManualTopic } from './manual';
 import { coachReport, type CoachReport } from './advisor';
 import { fmtEur } from '../../shared/money';
+import { buildReport, reportToText } from '../reports/catalog';
+import type { Report } from '../../shared/report';
 
 export interface GuideAnswer {
   answer: string;
@@ -34,6 +38,45 @@ export interface GuideAnswer {
 
 const PAGES = Object.keys(PAGE_LABEL) as GuidePage[];
 export const ADVICE_RE = /\b(should i|what should|what (?:do|can) i do|what now|next step|best (?:way|strategy|move|option|choice)|is it (?:a )?good idea|recommend|advi[cs]e|which is better|what would you do|help me|win|winning|losing|lose|keep getting fired|fired|dismiss|struggl|stuck|priorit|counsel|tips?|strategy|why is the board|board (?:is )?(?:unhappy|angry)|confidence (?:is )?(?:low|dropping|falling))/i;
+
+/** "Why…?" questions answered from the company's own figures: which report explains it, and who to ask in the game. */
+const INSIGHTS: { re: RegExp; report: string; ask: string; who: string; page: GuidePage }[] = [
+  { re: /losing money|lose money|\blos(s|ses)\b|unprofitable|not profitable|where (does|did) (the|my|our) money|money go|break.?even|\bmargins?\b|\bcosts?\b|profit/i, report: 'pnl', ask: 'CHR-HOLM', who: 'Henrik Holm (CFO)', page: 'finance' },
+  { re: /marketing|campaign|advertis/i, report: 'marketing', ask: 'CHR-GARNIER', who: 'Camille Garnier (sales & marketing)', page: 'products' },
+  { re: /\bsales\b|selling|sell (more|less|enough)|demand|market share|competitor/i, report: 'sales', ask: 'CHR-GARNIER', who: 'Camille Garnier (sales & marketing)', page: 'products' },
+  { re: /\bcash\b|liquidity|run out of money|insolv|covenant/i, report: 'cash', ask: 'CHR-HOLM', who: 'Henrik Holm (CFO)', page: 'finance' },
+  { re: /production|stock|inventory|\bplants?\b|factor(y|ies)|output/i, report: 'production', ask: 'CHR-MARCHETTI', who: 'the COO, Marchetti', page: 'operations' },
+  { re: /workforce|morale|strike|union|absentee/i, report: 'workforce', ask: 'CHR-OKAFOR', who: 'the HR director, Okafor', page: 'company' },
+  { re: /supplier|battery|supply|shortage/i, report: 'supply', ask: 'CHR-LINDQVIST', who: 'the purchasing director, Lindqvist', page: 'operations' },
+];
+const WHY_RE = /\b(why|how come|what'?s wrong|what is wrong|explain|understand|decode|break ?down|where does|what happened to|is .* working|does .* work|useful)\b/i;
+
+function insightFor(question: string) {
+  return INSIGHTS.find((x) => x.re.test(question)) ?? null;
+}
+
+function safeReport(db: DB | null, key: string): Report | null {
+  if (!db) return null;
+  try {
+    return buildReport(db, loadWorld(db), key, null, 'coach');
+  } catch {
+    return null;
+  }
+}
+
+/** A coach's answer to a "why…?" question, from the report that explains it. */
+function fromReport(r: Report, ins: NonNullable<ReturnType<typeof insightFor>>, question: string): GuideAnswer {
+  const findings = r.blocks.flatMap((b) => (b.kind === 'bullets' ? b.items : [])).filter((f) => !r.summary.includes(f.text.slice(4, 40))).sort((a, b) => (b.tone === 'critical' ? 2 : b.tone === 'warning' ? 1 : 0) - (a.tone === 'critical' ? 2 : a.tone === 'warning' ? 1 : 0));
+  return {
+    answer: `${r.summary}${findings.length ? ` What stands out: ${findings.slice(0, 3).map((f) => f.text.replace(/\.$/, '')).join('; ')}.` : ''}`,
+    steps: [],
+    notes: [`Open ${PAGE_LABEL[ins.page]} for the full “${r.title}”, or ask ${ins.who} with “Ask someone” — they will send you the report and their view.`],
+    pages: [{ page: ins.page, label: PAGE_LABEL[ins.page] }],
+    topics: [],
+    source: 'manual',
+    related: retrieve(question, 2).map((h) => ({ id: h.topic.id, title: h.topic.title })),
+  };
+}
 
 function tokens(s: string): string[] {
   return s.toLowerCase().replace(/[’']/g, '').split(/[^a-z0-9€]+/).filter((t) => t.length > 2 && !STOP.has(t));
@@ -106,12 +149,12 @@ function safeCoach(db: DB | null): CoachReport | null {
 function fromCoach(r: CoachReport): GuideAnswer {
   const top = r.advice.slice(0, 3);
   const c = r.confidence;
-  const answer = `${r.headline} The board's confidence is driven mostly by: ${c.drivers.filter((d) => d.delta < 0).slice(0, 3).map((d) => `${d.label.toLowerCase()} (${d.delta.toFixed(0)})`).join(', ') || 'nothing negative right now'}.${top.length ? ` Your top priorities: ${top.map((a, i) => `${i + 1}) ${a.title}`).join('; ')}.` : ''}`;
+  const answer = `${r.headline} What weighs most on the board right now: ${c.drivers.filter((d) => d.delta < 0).slice(0, 3).map((d) => `${d.label.charAt(0).toLowerCase()}${d.label.slice(1)} (${d.delta.toFixed(0)})`).join(', ') || 'nothing negative'}.${top.length ? ` Where I'd look first: ${top.map((a, i) => `${i + 1}) ${a.title}`).join('; ')}.` : ''}`;
   const best = top[0];
   return {
     answer,
-    steps: best ? [`${best.title}: ${best.why}`, ...best.steps] : [],
-    notes: ['Open the Coach tab for the full list, each with a one-click preview.'],
+    steps: best ? [`Why “${best.title}” first: ${best.why}`] : [],
+    notes: ['That is the direction, not the whole route: ask me “how do I …?” for the steps, or open “Show me how” in my read of your company above.'],
     pages: best?.link ? [{ page: best.link.page as GuidePage, label: PAGE_LABEL[best.link.page as GuidePage] ?? best.link.label }] : [],
     topics: [],
     source: 'manual',
@@ -131,8 +174,8 @@ const GUIDE_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    answer: { type: 'string', description: 'One to three sentences answering the question.' },
-    steps: { type: 'array', items: { type: 'string' }, description: 'Numbered how-to steps naming the exact pages, tabs and buttons from the manual (empty if not a how-to).' },
+    answer: { type: 'string', description: 'Two to five sentences answering the question as a coach.' },
+    steps: { type: 'array', items: { type: 'string' }, description: 'Numbered how-to steps naming the exact pages, tabs and buttons from the manual (empty unless the player asked how to do something).' },
     pages: { type: 'array', items: { type: 'string', enum: PAGES }, description: 'Pages the player should open.' },
     topic_ids: { type: 'array', items: { type: 'string', enum: MANUAL.map((m) => m.id) }, description: 'Manual entries the answer is based on.' },
   },
@@ -140,10 +183,12 @@ const GUIDE_JSON_SCHEMA = {
 };
 
 const SYSTEM = [
-  'You are the in-game help guide of "Automanager", an automotive CEO simulation. You explain HOW to do things in the game: which page, which tab, which button, and what happens afterwards.',
-  'Answer only from the MANUAL and the GAME FACTS. Use the exact names of pages, tabs and buttons as written in the manual. If the manual does not cover something, say so briefly and point to the closest entry.',
-  'You are also the player\'s coach. When they ask what to do, why the board is unhappy, how to win or how to stop being fired, give concrete, prioritised advice based ONLY on the COACH ANALYSIS (computed by the simulation from the live game): name the top two or three priorities, explain why in plain words, and give the steps. Mention that the Coach tab has one-click previews. Do not invent other strategies or numbers.',
-  'Never invent features, numbers or rules. Keep it short and practical.',
+  'You are the Coach of "Automanager", an automotive CEO simulation. You are NOT part of the game: no character hears you and nothing you say changes the company. You are a friendly, experienced coach sitting beside the player.',
+  'Answer ANY question about the game: how to do something (which page, tab and button), how a mechanism works, why something is happening in their company, what to do next, or general strategy.',
+  'For how-to questions, give the steps from the MANUAL using the exact names of pages, tabs and buttons written there.',
+  'For "why" questions about the company, explain the cause from the COMPANY FIGURES and the COACH ANALYSIS in plain words with one or two numbers, and say who in the game to ask or which report to open for more.',
+  'For "what should I do" questions, use the COACH ANALYSIS: point to the two or three things that matter most and why. Give direction and hints — the mechanism and what to look at — rather than a complete walkthrough; offer the detailed steps if they want them ("ask me how"). Never claim certainty about the future.',
+  'Never invent features, numbers or rules that are not in the MANUAL, GAME FACTS, COMPANY FIGURES or COACH ANALYSIS. If something is not covered, say so briefly. Keep it short and practical — a few sentences.',
   'Respond ONLY with JSON matching the schema.',
 ].join('\n');
 
@@ -183,12 +228,17 @@ export function topicAnswer(id: string): GuideAnswer | null {
 export async function askGuide(db: DB | null, llm: LlmConfig, question: string, page: string | null): Promise<GuideAnswer> {
   const q = question.trim().slice(0, 600);
   if (!q) return fromManual('how to play');
-  const wantsAdvice = ADVICE_RE.test(q) && !/^\s*how (?:do|can|to)\b/i.test(q);
+  const howTo = /^\s*(how (?:do|can|to|should)\b|where (?:do|can|is)\b)/i.test(q) && !/^\s*how come\b/i.test(q);
+  const wantsAdvice = ADVICE_RE.test(q) && !howTo;
   const coach = safeCoach(db);
-  const manualAnswer = wantsAdvice && coach ? fromCoach(coach) : fromManual(q);
+  const ins = insightFor(q);
+  const wantsWhy = !howTo && !!ins && (WHY_RE.test(q) || !retrieve(q).length);
+  const insightReport = ins ? safeReport(db, ins.report) : null;
+  const manualAnswer = wantsWhy && insightReport ? fromReport(insightReport, ins!, q) : wantsAdvice && coach ? fromCoach(coach) : fromManual(q);
   if (!llm.provider.available) return manualAnswer;
   const t0 = Date.now();
-  const user = [`MANUAL:\n${manualText()}`, `GAME FACTS:\n${liveFacts(db)}`, ...(coach ? [`COACH ANALYSIS:\n${coachText(coach)}`] : []), `The player is on the page: ${page && (PAGES as string[]).includes(page) ? PAGE_LABEL[page as GuidePage] : 'unknown'}.`, `QUESTION:\n${q}`].join('\n\n');
+  const figures = db ? [safeReport(db, 'pnl'), safeReport(db, 'unit_economics'), insightReport && !['pnl', 'unit_economics'].includes(insightReport.key) ? insightReport : null].filter(Boolean).map((r) => reportToText(r!, 1800)).join('\n\n') : '';
+  const user = [`MANUAL:\n${manualText()}`, `GAME FACTS:\n${liveFacts(db)}`, ...(figures ? [`COMPANY FIGURES:\n${figures}`] : []), ...(coach ? [`COACH ANALYSIS:\n${coachText(coach)}`] : []), `The player is on the page: ${page && (PAGES as string[]).includes(page) ? PAGE_LABEL[page as GuidePage] : 'unknown'}.`, `QUESTION:\n${q}`].join('\n\n');
   let status = 'ok';
   let error: string | null = null;
   try {

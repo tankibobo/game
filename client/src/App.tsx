@@ -14,25 +14,21 @@ import { Finance } from './pages/Finance';
 import { World } from './pages/World';
 import { Inbox } from './pages/Inbox';
 import { History } from './pages/History';
+import { News } from './pages/News';
 import { Meeting } from './pages/Meeting';
 import { Saves, Setup } from './pages/Saves';
 import { Decisions } from './pages/Decisions';
 import { Guide } from './components/Guide';
 import { AskPanel } from './components/Ask';
 
-const NAV: [Page, string][] = [
-  ['dashboard', 'Executive dashboard'],
-  ['decisions', 'Decisions'],
-  ['inbox', 'Inbox & meetings'],
-  ['company', 'Company'],
-  ['products', 'Products'],
-  ['projects', 'Projects'],
-  ['operations', 'Operations'],
-  ['finance', 'Finance'],
-  ['world', 'World'],
-  ['history', 'History'],
-  ['saves', 'Saves'],
+/** Main navigation, grouped: where you act, the company, the outside world, the records. */
+const NAV_GROUPS: [string, [Page, string][]][] = [
+  ['Run the company', [['dashboard', 'Executive dashboard'], ['decisions', 'Decisions'], ['inbox', 'Inbox & meetings']]],
+  ['Inside Asterion', [['company', 'People & divisions'], ['products', 'Products & marketing'], ['projects', 'Projects'], ['operations', 'Operations'], ['finance', 'Finance']]],
+  ['Outside', [['news', 'News'], ['world', 'Markets & world']]],
+  ['Records', [['history', 'History'], ['saves', 'Saves']]],
 ];
+const NAV: [Page, string][] = NAV_GROUPS.flatMap(([, xs]) => xs);
 
 function readHash(): Nav {
   const [page, param] = window.location.hash.replace(/^#\/?/, '').split('/');
@@ -131,12 +127,17 @@ export function App() {
                 <div className="brand-sub">Asterion Automotive</div>
               </div>
             </div>
-            {NAV.map(([p, l]) => (
-              <button key={p} className={`nav-item ${nav.page === p || (p === 'inbox' && nav.page === 'meeting') ? 'active' : ''}`} onClick={() => go(p)}>
-                <span>{l}</span>
-                {p === 'inbox' && top?.unreadInbox > 0 && <span className="nav-badge">{top.unreadInbox}</span>}
-                {p === 'decisions' && top?.pendingActions?.filter((a: any) => a.status === 'pending_confirmation' || a.status === 'approved').length > 0 && <span className="nav-badge" style={{ background: '#c98500' }} title="Drafts waiting for you, or approved decisions waiting to be carried out">{top.pendingActions.filter((a: any) => a.status === 'pending_confirmation' || a.status === 'approved').length}</span>}
-              </button>
+            {NAV_GROUPS.map(([group, items]) => (
+              <div key={group} className="nav-group">
+                <div className="nav-group-title">{group}</div>
+                {items.map(([p, l]) => (
+                  <button key={p} className={`nav-item ${nav.page === p || (p === 'inbox' && nav.page === 'meeting') ? 'active' : ''}`} onClick={() => go(p)}>
+                    <span>{l}</span>
+                    {p === 'inbox' && top?.unreadInbox > 0 && <span className="nav-badge">{top.unreadInbox}</span>}
+                    {p === 'decisions' && top?.pendingActions?.filter((a: any) => a.status === 'pending_confirmation' || a.status === 'approved').length > 0 && <span className="nav-badge" style={{ background: '#c98500' }} title="Drafts waiting for you, or approved decisions waiting to be carried out">{top.pendingActions.filter((a: any) => a.status === 'pending_confirmation' || a.status === 'approved').length}</span>}
+                  </button>
+                ))}
+              </div>
             ))}
             <div className="sidebar-foot">
               <div>Voices: {llmLabel(status.llm)}</div>
@@ -162,7 +163,7 @@ export function App() {
                   <div className="top-kpi"><span className="l">Net leverage</span><span className="v">{top.kpis.netLeverage > 50 ? 'n/m' : `${top.kpis.netLeverage.toFixed(2)}x`}</span></div>
                   <div className="top-kpi"><span className="l">Board confidence</span><span className="v" style={{ color: top.board.confidence < 30 ? 'var(--critical-text)' : undefined }}>{Math.round(top.board.confidence)}/100</span></div>
                   <button className="btn sm" onClick={() => { setGuideOpen(false); setAsk({}); }} title="Ask an executive a quick question — no meeting needed">Ask someone</button>
-                  <button className="btn sm guide-btn" onClick={() => { setAsk(null); setGuideOpen(true); }} title="Advice and how-to help">? Guide</button>
+                  <button className="btn sm guide-btn" onClick={() => { setAsk(null); setGuideOpen(true); }} title="Your coach, outside the game: ask anything — how to, why, what next">? Coach</button>
                   <span className={`pill ${status.llm.available ? 'info' : ''}`} title={status.llm.available ? `Characters are voiced by ${llmLabel(status.llm)}; all outcomes are decided by the simulation engine.` : status.llm.note ?? 'Characters use the deterministic rule-based responder.'}>
                     {status.llm.available ? (status.llm.provider === 'claude-code' ? 'Claude characters' : 'LLM characters') : 'Deterministic mode'}
                   </span>
@@ -190,6 +191,7 @@ export function App() {
               {nav.page === 'world' && <World />}
               {nav.page === 'inbox' && <Inbox />}
               {nav.page === 'history' && <History />}
+              {nav.page === 'news' && <News />}
               {nav.page === 'meeting' && <Meeting />}
               {nav.page === 'saves' && <Saves />}
             </main>

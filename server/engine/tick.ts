@@ -99,6 +99,8 @@ export function advanceDay(w: World, hooks: TickHooks = {}): DayResult {
     closeMonth(w);
     monthlyConfidence(w);
     updateSharePrice(w);
+    const snap = w.snapshots[w.snapshots.length - 1];
+    if (snap) Object.assign(snap.data, { sharePriceCents: w.meta.sharePriceCents, boardConfidence: w.meta.boardConfidence });
     res.closedMonth = monthKey(d);
     w.meta.forecastStale = 1;
   }

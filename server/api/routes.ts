@@ -1,3 +1,4 @@
+import { newsView } from '../game/news';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
 import type { DB } from '../db/connection';
@@ -117,6 +118,7 @@ export function buildApi(saves: SaveManager, llm: LlmConfig): express.Router {
   r.get('/finance', (_req, res) => res.json(finance(db())));
   r.get('/world', (_req, res) => res.json(worldView(db())));
   r.get('/inbox', (_req, res) => res.json(inboxView(db())));
+  r.get('/news', (req, res) => res.json(newsView(db(), Math.min(36, Math.max(1, Number(req.query.months ?? 4) || 4)))));
   r.get('/forecast', (_req, res) => res.json(latestForecast(db())));
   r.post('/forecast/refresh', (_req, res) => {
     forceForecast(db());
